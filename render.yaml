@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: rfp-review-agent
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: RFP_DB_PATH
+        value: rfp 법제도 검토항목.db
+      - key: RFP_OUTPUT_DIR
+        value: outputs
+      - key: RFP_REVIEW_CONCURRENCY
+        value: "1"
