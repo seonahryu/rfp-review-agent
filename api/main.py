@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -25,6 +26,23 @@ from orchestrator import (
 
 app = FastAPI(title="RFP Legal Review API")
 LOW_CONFIDENCE_THRESHOLD = float(os.getenv("RFP_LOW_CONFIDENCE_THRESHOLD", "0.75"))
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "RFP_ALLOWED_ORIGINS",
+        "http://localhost:3000,https://*.vercel.app,https://v0.dev,https://v0.app",
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
