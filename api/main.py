@@ -110,6 +110,10 @@ def parse_cache_path() -> Path:
     return output_dir_path() / "parse_cache.json"
 
 
+def job_store_path() -> Path:
+    return output_dir_path() / "parse_jobs.json"
+
+
 def load_parse_cache() -> dict[str, Any]:
     path = parse_cache_path()
     if not path.exists():
@@ -124,6 +128,32 @@ def save_parse_cache(cache: dict[str, Any]) -> None:
     path = parse_cache_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+
+
+def load_parse_jobs() -> dict[str, Any]:
+    path = job_store_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_parse_jobs(jobs: dict[str, Any]) -> None:
+    path = job_store_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(jobs, ensure_ascii=False), encoding="utf-8")
+
+
+def store_parse_job(job_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    jobs = load_parse_jobs()
+    current = jobs.get(job_id, {"job_id": job_id})
+    current.update(patch)
+    jobs[job_id] = current
+    save_parse_jobs(jobs)
+    PARSE_JOBS[job_id] = current
+    return current
 
 
 def hash_file(path: Path) -> str:
@@ -354,7 +384,7 @@ def parse_pdf_path(pdf_path: Path, file_hash: str | None = None):
 
 
 async def run_parse_job(job_id: str, pdf_path: Path) -> None:
-    PARSE_JOBS[job_id]["status"] = "running"
+    store_parse_job(job_id, {"status": "running"})
     try:
         file_hash = PARSE_JOBS[job_id].get("file_hash")
         result = await asyncio.to_thread(parse_pdf_path, pdf_path, file_hash)
@@ -362,9 +392,9 @@ async def run_parse_job(job_id: str, pdf_path: Path) -> None:
             cache = load_parse_cache()
             cache[file_hash] = result
             save_parse_cache(cache)
-        PARSE_JOBS[job_id].update({"status": "succeeded", "result": result})
+        store_parse_job(job_id, {"status": "succeeded", "result": result})
     except Exception as err:
-        PARSE_JOBS[job_id].update({"status": "failed", "error": str(err)})
+        store_parse_job(job_id, {"status": "failed", "error": str(err)})
     finally:
         pdf_path.unlink(missing_ok=True)
 
@@ -567,24 +597,23 @@ async def parse_pdf_start(file: UploadFile = File(...)):
     cached = load_parse_cache().get(file_hash)
     job_id = uuid.uuid4().hex
     if cached:
-        PARSE_JOBS[job_id] = {
-            "job_id": job_id,
+        store_parse_job(job_id, {
             "status": "succeeded",
             "file_hash": file_hash,
             "cache_hit": True,
             "result": cached,
-        }
+        })
         pdf_path.unlink(missing_ok=True)
         return JSONResponse({"job_id": job_id, "status": "succeeded", "file_hash": file_hash, "cache_hit": True})
 
-    PARSE_JOBS[job_id] = {"job_id": job_id, "status": "queued", "file_hash": file_hash, "cache_hit": False}
+    store_parse_job(job_id, {"status": "queued", "file_hash": file_hash, "cache_hit": False})
     asyncio.create_task(run_parse_job(job_id, pdf_path))
     return JSONResponse({"job_id": job_id, "status": "queued", "file_hash": file_hash, "cache_hit": False})
 
 
 @app.get("/api/jobs/{job_id}")
 async def job_status(job_id: str):
-    job = PARSE_JOBS.get(job_id)
+    job = PARSE_JOBS.get(job_id) or load_parse_jobs().get(job_id)
     if job is None:
         return JSONResponse({"error": "작업을 찾을 수 없습니다."}, status_code=404)
     return JSONResponse(job)

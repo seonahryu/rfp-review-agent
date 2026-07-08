@@ -9,3 +9,6 @@ assert(apiMain.includes("parse_cache_path"), "backend should define a persistent
 assert(apiMain.includes("load_parse_cache"), "backend should load cached parse results")
 assert(apiMain.includes("save_parse_cache"), "backend should persist parse results")
 assert(apiMain.includes("file_hash"), "parse jobs should expose the uploaded file hash")
+assert(apiMain.includes("job_store_path"), "backend should define a persistent parse job store")
+assert(apiMain.includes("load_parse_jobs"), "backend should load persisted parse jobs")
+assert(apiMain.includes("store_parse_job"), "backend should persist parse job status updates")
