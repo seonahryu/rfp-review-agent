@@ -14,3 +14,9 @@ services:
         value: outputs
       - key: RFP_REVIEW_CONCURRENCY
         value: "1"
+      - key: OPENAI_PDF_PAGES_PER_CALL
+        value: "1"
+      - key: OPENAI_PDF_TIMEOUT_SECONDS
+        value: "600"
+      - key: OPENAI_PDF_MAX_RETRIES
+        value: "4"

@@ -56,6 +56,8 @@ class GptParserAgent:
         self.config = config or GptParserConfig(
             model=os.getenv("OPENAI_PDF_MODEL", "gpt-4.1"),
             pages_per_call=int(os.getenv("OPENAI_PDF_PAGES_PER_CALL", "3")),
+            timeout_seconds=int(os.getenv("OPENAI_PDF_TIMEOUT_SECONDS", "180")),
+            max_retries=int(os.getenv("OPENAI_PDF_MAX_RETRIES", "2")),
         )
 
     def is_configured(self) -> bool:
@@ -98,6 +100,7 @@ class GptParserAgent:
                     pages.append(page)
 
             pages = fill_missing_rfp_printed_page_numbers(pages)
+            infer_table_candidates(pages)
             for page in pages:
                 insert_page(conn, document_id, page)
             conn.commit()
@@ -135,6 +138,7 @@ class GptParserAgent:
             ).fetchall()
             pages = dedupe_pages([row_to_candidate(row) for row in rows])
             pages = fill_missing_rfp_printed_page_numbers(pages)
+            infer_table_candidates(pages)
             return ParsedDocument(
                 document_id=int(doc["id"]),
                 document_name=str(doc["document_name"]),
@@ -269,6 +273,61 @@ def fill_missing_rfp_printed_page_numbers(pages: list[CandidatePage]) -> list[Ca
         if candidates:
             page.rfp_printed_page_no = min(candidates, key=lambda value: abs(value - page.page_no))
     return pages
+
+
+def infer_table_candidates(pages: list[CandidatePage]) -> None:
+    previous_was_table = False
+    for page in sorted(pages, key=lambda item: item.page_no):
+        if page.has_table_candidate or has_explicit_table_block(page.page_text) or is_table_like_text(page.page_text):
+            page.has_table_candidate = True
+            previous_was_table = True
+            continue
+        if previous_was_table and is_likely_table_continuation(page.page_text):
+            page.has_table_candidate = True
+            previous_was_table = True
+            continue
+        previous_was_table = False
+
+
+def has_explicit_table_block(text: str) -> bool:
+    source = str(text or "")
+    return "[표 추출]" in source or bool(re.search(r"^\s*\|.+\|\s*$", source, re.MULTILINE))
+
+
+def is_table_like_text(text: str) -> bool:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    if not compact:
+        return False
+    if "항목추진내용" in compact:
+        return True
+    if "요구사항분류" in compact and "요구사항명칭" in compact:
+        return True
+    if "부서명" in compact and "역할" in compact:
+        return True
+    return False
+
+
+def is_likely_table_continuation(text: str) -> bool:
+    source = str(text or "")
+    compact = re.sub(r"\s+", "", source)
+    if not compact:
+        return False
+    short_label_count = len(re.findall(r"(?m)^\s*[가-힣]{1,4}\s*$", source))
+    section_signal_count = sum(
+        1
+        for keyword in [
+            "현황분석",
+            "요구사항분석",
+            "선진사례분석",
+            "개선과제",
+            "정보화",
+            "전략수립",
+            "목표모델",
+            "설계",
+        ]
+        if keyword in compact
+    )
+    return short_label_count >= 2 and section_signal_count >= 3
 
 
 def ensure_parse_schema(conn: sqlite3.Connection) -> None:
