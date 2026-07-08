@@ -15,6 +15,14 @@ assert(apiMain.includes("NULL AS rfp_printed_page_no"), "search should tolerate 
 assert(apiMain.includes('"page": row["rfp_printed_page_no"] or row["page_no"]'), "search should prefer printed RFP page")
 assert(apiMain.includes('"pdf_page": row["page_no"]'), "search should expose original PDF page separately")
 assert(!apiMain.includes('lines = [\n        "검토의견"'), "review opinion copy text should not start with a label")
+assert(apiMain.includes("corrected_result: str ="), "backend feedback model should accept corrected legal compliance result")
+assert(apiMain.includes("load_item_criteria"), "backend should load legal target and requirement criteria from DB")
+assert(apiMain.includes('"target_text": criteria.get("target_text", "")'), "UI result should include legal target text")
+assert(apiMain.includes('"requirement_texts": criteria.get("requirement_texts", [])'), "UI result should include legal requirement texts")
+assert(
+  apiMain.includes("result = corrected_result or item.normalized_result or item.review_result"),
+  "backend recommendation input should prefer corrected legal compliance result",
+)
 
 for (const uiRoot of uiRoots) {
   const finalStep = fs.readFileSync(path.join(uiRoot, "components", "steps", "final-step.tsx"), "utf8")
@@ -22,6 +30,8 @@ for (const uiRoot of uiRoots) {
   const itemDetailPanel = fs.readFileSync(path.join(uiRoot, "components", "item-detail-panel.tsx"), "utf8")
   const consoleView = fs.readFileSync(path.join(uiRoot, "components", "console.tsx"), "utf8")
   const types = fs.readFileSync(path.join(uiRoot, "lib", "types.ts"), "utf8")
+  const resultItemCard = fs.readFileSync(path.join(uiRoot, "components", "result-item-card.tsx"), "utf8")
+  const apiClient = fs.readFileSync(path.join(uiRoot, "lib", "api-client.ts"), "utf8")
 
   assert(finalStep.includes("법령준수 개선권고 주요항목"), "final table should keep the legal item column")
   assert(finalStep.includes(">법령준수 여부<"), "final table should keep 법령준수 여부 column")
@@ -42,4 +52,16 @@ for (const uiRoot of uiRoots) {
   assert(consoleView.includes("detailPanelOpen"), "console should track detail panel visibility")
 
   assert(types.includes("pdf_page?: number | string"), "search hit type should include pdf_page")
+  assert(types.includes("target_text?: string"), "review item type should include legal target text")
+  assert(types.includes("requirement_texts?: string[]"), "review item type should include legal requirement texts")
+  assert(types.includes("corrected_result?: string"), "feedback type should include corrected legal compliance result")
+  assert(resultItemCard.includes("법령준수여부 수정"), "result confirmation card should let users correct legal compliance result")
+  assert(resultItemCard.includes("RESULT_OPTIONS.map"), "legal compliance correction should use four explicit choice buttons")
+  assert(resultItemCard.includes("aria-pressed={active}"), "legal compliance correction buttons should expose selected state")
+  assert(resultItemCard.includes("corrected_result: correctedResult"), "result confirmation should submit corrected legal compliance result")
+  assert(itemDetailPanel.includes("HighlightedEvidence"), "judgement evidence should be visually highlighted")
+  assert(itemDetailPanel.includes("font-semibold text-foreground"), "highlighted judgement evidence should be bold")
+  assert(itemDetailPanel.includes('DetailRow label="대상"'), "detail panel should show legal target criteria")
+  assert(itemDetailPanel.includes("준수 항목"), "detail panel should show legal requirement criteria")
+  assert(apiClient.includes("user_feedback: feedback[String(item.item_no)]"), "recommendation generation should send item feedback")
 }

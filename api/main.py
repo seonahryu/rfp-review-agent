@@ -64,6 +64,7 @@ class EvidencePairInput(BaseModel):
 
 class UserFeedbackInput(BaseModel):
     comment: str = ""
+    corrected_result: str = ""
     corrected_evidence_pairs: list[EvidencePairInput] = Field(default_factory=list)
     resolved: bool = False
 
@@ -123,6 +124,45 @@ def load_item_titles(db_path: Path) -> dict[str, str]:
         conn.close()
 
 
+def load_item_criteria(db_path: Path) -> dict[str, dict[str, Any]]:
+    if not db_path.exists():
+        return {}
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        legal_item = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='legal_item'"
+        ).fetchone()
+        if legal_item is None:
+            return {}
+        criteria: dict[str, dict[str, Any]] = {}
+        for row in conn.execute("SELECT item_no, title, target_text FROM legal_item"):
+            criteria[str(row["item_no"])] = {
+                "title": row["title"] or "",
+                "target_text": row["target_text"] or "",
+                "requirement_texts": [],
+            }
+
+        legal_requirement = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='legal_requirement'"
+        ).fetchone()
+        if legal_requirement is not None:
+            for row in conn.execute(
+                "SELECT item_no, requirement_text FROM legal_requirement ORDER BY item_no, rowid"
+            ):
+                item_no = str(row["item_no"])
+                criteria.setdefault(
+                    item_no,
+                    {"title": "", "target_text": "", "requirement_texts": []},
+                )
+                requirement_text = row["requirement_text"] or ""
+                if requirement_text:
+                    criteria[item_no]["requirement_texts"].append(requirement_text)
+        return criteria
+    finally:
+        conn.close()
+
+
 def evidence_pairs(review) -> list[dict[str, Any]]:
     pairs: list[dict[str, Any]] = []
     max_len = max(len(review.evidence_pages), len(review.evidence_text))
@@ -153,6 +193,7 @@ def user_feedback_template() -> dict[str, Any]:
     return {
         "status": "not_submitted",
         "comment": "",
+        "corrected_result": "",
         "corrected_evidence_pairs": [],
         "resolved": False,
     }
@@ -210,14 +251,17 @@ def review_result_column_text(results: list[dict[str, Any]]) -> str:
     return "\n".join(item["normalized_result"] for item in results)
 
 
-def review_for_ui(review, item_titles: dict[str, str]) -> dict[str, Any]:
+def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str, Any]:
     compliance = review.compliance_content
     verification = review.verification_audit
     normalized_result = normalize_result_label(review.final_result)
     compliance_text = compliance.compliance_content if compliance is not None else ""
+    criteria = item_criteria.get(str(review.item_no), {})
     return {
         "item_no": review.item_no,
-        "law_name": item_titles.get(str(review.item_no)),
+        "law_name": criteria.get("title"),
+        "target_text": criteria.get("target_text", ""),
+        "requirement_texts": criteria.get("requirement_texts", []),
         "review_result": review.final_result,
         "normalized_result": normalized_result,
         "final_status": review.final_status,
@@ -245,8 +289,8 @@ def review_for_ui(review, item_titles: dict[str, str]) -> dict[str, Any]:
 
 
 def summary_for_ui(summary, db_path: Path) -> dict[str, Any]:
-    item_titles = load_item_titles(db_path)
-    results = [review_for_ui(review, item_titles) for review in summary.final_reviews]
+    item_criteria = load_item_criteria(db_path)
+    results = [review_for_ui(review, item_criteria) for review in summary.final_reviews]
     user_action_required_count = sum(1 for item in results if item["user_action_required"])
     return {
         "document_id": summary.document_id,
@@ -398,7 +442,8 @@ def final_review_from_payload(item: RecommendationReviewInput) -> FinalReview:
         warnings.append("user_feedback_applied")
         reason = f"{reason}\n\n사용자 수정 의견: {feedback.comment}".strip()
 
-    result = item.normalized_result or item.review_result
+    corrected_result = feedback.corrected_result.strip() if feedback else ""
+    result = corrected_result or item.normalized_result or item.review_result
     review = ReviewResult(
         item_no=str(item.item_no),
         route_type="user_confirmed",
