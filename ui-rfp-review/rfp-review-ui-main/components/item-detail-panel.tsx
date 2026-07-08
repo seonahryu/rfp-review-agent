@@ -106,11 +106,9 @@ export function ItemDetailPanel({
                 <p className="text-xs font-medium text-muted-foreground">근거</p>
                 <ul className="mt-2 space-y-2">
                   {item.evidence_pairs!.map((p, i) => (
-                    <li key={i} className="rounded-md border border-status-attention/30 bg-status-attention-bg p-2 text-sm">
+                    <li key={i} className="rounded-md border border-border bg-muted/40 p-2 text-sm">
                       <span className="font-semibold text-primary">p.{p.page ?? "-"}</span>
-                      <mark className="ml-1 rounded-sm bg-background/70 px-1 font-semibold text-foreground">
-                        {p.text}
-                      </mark>
+                      <span className="text-foreground">: {p.text}</span>
                     </li>
                   ))}
                 </ul>
@@ -120,7 +118,7 @@ export function ItemDetailPanel({
                 {item.evidence_pages && item.evidence_pages.length > 0 && (
                   <span className="mr-1 font-semibold text-primary">p.{item.evidence_pages.join(", ")}</span>
                 )}
-                <HighlightedEvidence text={Array.isArray(item.evidence_text) ? item.evidence_text.join("\n") : item.evidence_text} />
+                {Array.isArray(item.evidence_text) ? item.evidence_text.join("\n") : item.evidence_text}
               </DetailRow>
             ) : null}
 
@@ -191,10 +189,6 @@ export function ItemDetailPanel({
       </div>
     </aside>
   )
-}
-
-function HighlightedEvidence({ text }: { text: string }) {
-  return <mark className="rounded-sm bg-status-attention-bg px-1 font-semibold text-foreground">{text}</mark>
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {

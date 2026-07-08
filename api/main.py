@@ -444,11 +444,18 @@ def final_review_from_payload(item: RecommendationReviewInput) -> FinalReview:
 
     corrected_result = feedback.corrected_result.strip() if feedback else ""
     result = corrected_result or item.normalized_result or item.review_result
+    is_target = corrected_is_target(corrected_result, item.is_target)
+    if corrected_result in {"미준수", "보완필요"} and not recommendation.strip():
+        recommendation = (
+            feedback.comment.strip()
+            if feedback and feedback.comment.strip()
+            else "해당 법제도 준수 항목을 반영하여 제안요청서를 보완하시기 바랍니다."
+        )
     review = ReviewResult(
         item_no=str(item.item_no),
         route_type="user_confirmed",
         result=result,
-        is_target=item.is_target,
+        is_target=is_target,
         confidence=item.confidence,
         evidence_pages=evidence_pages,
         evidence_text=evidence_text,
@@ -463,7 +470,7 @@ def final_review_from_payload(item: RecommendationReviewInput) -> FinalReview:
         item_no=str(item.item_no),
         final_status=item.final_status or "사용자 확인 완료",
         final_result=result,
-        is_target=item.is_target,
+        is_target=is_target,
         confidence=item.confidence,
         evidence_pages=evidence_pages,
         evidence_text=evidence_text,
@@ -472,6 +479,14 @@ def final_review_from_payload(item: RecommendationReviewInput) -> FinalReview:
         reviews=[review],
         warnings=warnings,
     )
+
+
+def corrected_is_target(corrected_result: str, original: bool | None) -> bool | None:
+    if corrected_result == "해당없음":
+        return False
+    if corrected_result in {"준수", "미준수", "보완필요"}:
+        return True
+    return original
 
 
 def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:

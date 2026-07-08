@@ -13,6 +13,7 @@ import {
   STATUS_LABEL,
   type EvidencePair,
   type ReviewItem,
+  type StatusKey,
   type UserFeedback,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -48,6 +49,7 @@ export function ResultItemCard({
   const status = normalizeStatus(item)
   const initialResult = status === "unknown" ? "" : STATUS_LABEL[status]
   const [correctedResult, setCorrectedResult] = useState(feedback?.corrected_result ?? initialResult)
+  const displayStatus = statusFromResult(correctedResult) ?? status
   const confidencePct =
     typeof item.confidence === "number"
       ? Math.round(item.confidence <= 1 ? item.confidence * 100 : item.confidence)
@@ -92,7 +94,7 @@ export function ResultItemCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs text-muted-foreground">#{item.item_no}</span>
             <h3 className="text-sm font-semibold text-foreground">{item.law_name || "법제도명 없음"}</h3>
-            <StatusBadge status={status} />
+            <StatusBadge status={displayStatus} />
             {attention && !confirmed && <AttentionBadge />}
             {confirmed && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-status-compliant">
@@ -236,4 +238,12 @@ export function ResultItemCard({
       )}
     </div>
   )
+}
+
+function statusFromResult(result: string): StatusKey | null {
+  if (result === "준수") return "compliant"
+  if (result === "미준수") return "noncompliant"
+  if (result === "보완필요") return "revision"
+  if (result === "해당없음") return "na"
+  return null
 }

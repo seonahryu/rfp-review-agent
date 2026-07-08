@@ -23,6 +23,8 @@ assert(
   apiMain.includes("item_criteria = load_item_criteria(db_path)"),
   "review check response should load full legal criteria, not only item titles",
 )
+assert(apiMain.includes("def corrected_is_target"), "backend should update target status from corrected legal compliance result")
+assert(apiMain.includes('corrected_result in {"미준수", "보완필요"}'), "backend should backfill recommendation when user changes result to action-needed")
 assert(
   apiMain.includes("result = corrected_result or item.normalized_result or item.review_result"),
   "backend recommendation input should prefer corrected legal compliance result",
@@ -42,6 +44,8 @@ for (const uiRoot of uiRoots) {
   assert(finalStep.includes("법령준수 여부 복사"), "final step should show row-level legal compliance copy")
   assert(finalStep.includes("권고내용 복사"), "final step should show row-level recommendation copy")
   assert(recommendationStep.includes("법령준수여부 복사"), "recommendation step should include 법령준수여부 복사")
+  assert(recommendationStep.includes("const displayItems = results"), "recommendation step should show not-applicable items too")
+  assert(!recommendationStep.includes("results.filter((r: ReviewItem) => r.is_target !== false)"), "recommendation step should not hide not-applicable items")
   assert(finalStep.includes(">권고내용<"), "final table should show recommendation content column")
   assert(finalStep.includes("<RotateCcw"), "final step should show a new-review action")
   assert(finalStep.includes("새 검토"), "final confirmation should be replaced with 새 검토")
@@ -62,9 +66,9 @@ for (const uiRoot of uiRoots) {
   assert(resultItemCard.includes("법령준수여부 수정"), "result confirmation card should let users correct legal compliance result")
   assert(resultItemCard.includes("RESULT_OPTIONS.map"), "legal compliance correction should use four explicit choice buttons")
   assert(resultItemCard.includes("aria-pressed={active}"), "legal compliance correction buttons should expose selected state")
+  assert(resultItemCard.includes("statusFromResult(correctedResult)"), "result card badge should update from corrected legal compliance result")
   assert(resultItemCard.includes("corrected_result: correctedResult"), "result confirmation should submit corrected legal compliance result")
-  assert(itemDetailPanel.includes("HighlightedEvidence"), "judgement evidence should be visually highlighted")
-  assert(itemDetailPanel.includes("font-semibold text-foreground"), "highlighted judgement evidence should be bold")
+  assert(!itemDetailPanel.includes("HighlightedEvidence"), "judgement evidence should not be specially highlighted")
   assert(itemDetailPanel.includes('DetailRow label="대상"'), "detail panel should show legal target criteria")
   assert(itemDetailPanel.includes("준수 항목"), "detail panel should show legal requirement criteria")
   assert(apiClient.includes("user_feedback: feedback[String(item.item_no)]"), "recommendation generation should send item feedback")
