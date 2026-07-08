@@ -400,8 +400,8 @@ async def run_review_check(document_id: int, items: list[str]) -> dict[str, Any]
 
 
 def review_check_response(document, final_reviews: list[FinalReview], db_path: Path) -> dict[str, Any]:
-    item_titles = load_item_titles(db_path)
-    results = [review_for_ui(review, item_titles) for review in final_reviews]
+    item_criteria = load_item_criteria(db_path)
+    results = [review_for_ui(review, item_criteria) for review in final_reviews]
     user_action_required_count = sum(1 for item in results if item["user_action_required"])
     return {
         "document_id": document.document_id,

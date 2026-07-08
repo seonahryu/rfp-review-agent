@@ -20,6 +20,10 @@ assert(apiMain.includes("load_item_criteria"), "backend should load legal target
 assert(apiMain.includes('"target_text": criteria.get("target_text", "")'), "UI result should include legal target text")
 assert(apiMain.includes('"requirement_texts": criteria.get("requirement_texts", [])'), "UI result should include legal requirement texts")
 assert(
+  apiMain.includes("item_criteria = load_item_criteria(db_path)"),
+  "review check response should load full legal criteria, not only item titles",
+)
+assert(
   apiMain.includes("result = corrected_result or item.normalized_result or item.review_result"),
   "backend recommendation input should prefer corrected legal compliance result",
 )
