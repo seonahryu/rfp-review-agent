@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { StatusBadge, AttentionBadge } from "@/components/status-badge"
 import { searchDocument } from "@/lib/api-client"
-import { normalizeStatus, type ReviewItem, type SearchHit } from "@/lib/types"
+import { normalizeStatus, type ReviewItem, type SearchHit, type StatusKey } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -15,6 +15,7 @@ export function ItemDetailPanel({
   item,
   documentId,
   confirmed,
+  correctedResult,
   position,
   total,
   onPrevious,
@@ -24,6 +25,7 @@ export function ItemDetailPanel({
   item: ReviewItem | null
   documentId: string
   confirmed: boolean
+  correctedResult?: string
   position: number
   total: number
   onPrevious: () => void
@@ -53,6 +55,8 @@ export function ItemDetailPanel({
     item && typeof item.confidence === "number"
       ? Math.round(item.confidence <= 1 ? item.confidence * 100 : item.confidence)
       : null
+  const displayResult = correctedResult || item?.normalized_result || item?.review_result || "-"
+  const displayStatus = statusFromResult(correctedResult || "") ?? (item ? normalizeStatus(item) : "unknown")
 
   return (
     <aside className="flex w-[22rem] shrink-0 flex-col border-l border-border bg-card">
@@ -89,7 +93,7 @@ export function ItemDetailPanel({
           <div className="px-5 py-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground">#{item.item_no}</span>
-              <StatusBadge status={normalizeStatus(item)} />
+              <StatusBadge status={displayStatus} />
               {(item.user_action_required || item.needs_user_attention) && !confirmed && <AttentionBadge />}
               {confirmed && (
                 <span className="inline-flex items-center gap-1 text-xs font-medium text-status-compliant">
@@ -99,7 +103,7 @@ export function ItemDetailPanel({
             </div>
             <h4 className="mt-2 text-sm font-semibold text-foreground">{item.law_name || "법제도명 없음"}</h4>
 
-            <DetailRow label="판단결과">{item.normalized_result || item.review_result || "-"}</DetailRow>
+            <DetailRow label="판단결과">{displayResult}</DetailRow>
             {confidencePct !== null && (
               <DetailRow label="신뢰도">
                 <span className={cn(confidencePct < 70 && "text-status-attention font-semibold")}>
@@ -212,6 +216,14 @@ export function ItemDetailPanel({
       </div>
     </aside>
   )
+}
+
+function statusFromResult(result: string): StatusKey | null {
+  if (result === "준수") return "compliant"
+  if (result === "미준수") return "noncompliant"
+  if (result === "보완필요") return "revision"
+  if (result === "해당없음") return "na"
+  return null
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {

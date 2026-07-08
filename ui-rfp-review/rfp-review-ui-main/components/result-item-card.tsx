@@ -1,17 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { CheckCircle2, ChevronDown, Pencil, Plus, Trash2 } from "lucide-react"
+import { CheckCircle2, ChevronDown, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { StatusBadge, AttentionBadge } from "@/components/status-badge"
 import {
   attentionReasonText,
   normalizeStatus,
   STATUS_LABEL,
-  type EvidencePair,
   type ReviewItem,
   type StatusKey,
   type UserFeedback,
@@ -43,8 +40,6 @@ export function ResultItemCard({
   onUnconfirm: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [note, setNote] = useState(feedback?.comment ?? feedback?.note ?? "")
-  const [pairs, setPairs] = useState<EvidencePair[]>(feedback?.corrected_evidence_pairs ?? [])
   const attention = item.user_action_required || item.needs_user_attention
   const status = normalizeStatus(item)
   const initialResult = status === "unknown" ? "" : STATUS_LABEL[status]
@@ -55,25 +50,10 @@ export function ResultItemCard({
       ? Math.round(item.confidence <= 1 ? item.confidence * 100 : item.confidence)
       : null
 
-  function addPair() {
-    setPairs((p) => [...p, { page: "", text: "" }])
-  }
-
-  function updatePair(i: number, patch: Partial<EvidencePair>) {
-    setPairs((p) => p.map((pair, idx) => (idx === i ? { ...pair, ...patch } : pair)))
-  }
-
-  function removePair(i: number) {
-    setPairs((p) => p.filter((_, idx) => idx !== i))
-  }
-
   function handleConfirm() {
     onConfirm({
       status: "submitted",
-      comment: note.trim(),
-      note: note.trim(),
       corrected_result: correctedResult,
-      corrected_evidence_pairs: pairs.filter((p) => String(p.page ?? "").trim() || p.text.trim()),
       resolved: true,
     })
     setOpen(false)
@@ -150,7 +130,7 @@ export function ResultItemCard({
         <div className="border-t border-border p-4" onClick={(e) => e.stopPropagation()}>
           {item.recommendation && (
             <div className="mb-4 rounded-md bg-muted/50 p-3">
-              <p className="text-xs font-medium text-muted-foreground">참고 권고(recommendation)</p>
+              <p className="text-xs font-medium text-muted-foreground">참고 권고</p>
               <p className="mt-1 text-sm text-foreground">{item.recommendation}</p>
             </div>
           )}
@@ -177,52 +157,6 @@ export function ResultItemCard({
               })}
             </div>
           </div>
-
-          <Label className="mt-4 block text-sm font-medium">수정 의견</Label>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            페이지나 근거가 잘못되었다고 판단하면 의견을 남기고 아래에 수정 근거를 추가하세요.
-          </p>
-          <Textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="예: 근거 페이지가 p.14가 아니라 p.16으로 보입니다."
-            className="mt-2 min-h-20"
-          />
-
-          <div className="mt-4 flex items-center justify-between">
-            <Label className="text-sm font-medium">근거 수정(corrected_evidence_pairs)</Label>
-            <Button type="button" variant="outline" size="sm" onClick={addPair} className="gap-1">
-              <Plus className="size-3.5" /> 근거 추가
-            </Button>
-          </div>
-          {pairs.length > 0 && (
-            <div className="mt-2 space-y-2">
-              {pairs.map((pair, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <Input
-                    value={String(pair.page ?? "")}
-                    onChange={(e) => updatePair(i, { page: e.target.value })}
-                    placeholder="페이지"
-                    className="w-24"
-                  />
-                  <Textarea
-                    value={pair.text}
-                    onChange={(e) => updatePair(i, { text: e.target.value })}
-                    placeholder="근거 문장"
-                    className="min-h-10 flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removePair(i)}
-                    className="mt-2 text-muted-foreground hover:text-destructive"
-                    aria-label="근거 삭제"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
 
           <div className="mt-4 flex justify-end gap-2">
             {confirmed && (

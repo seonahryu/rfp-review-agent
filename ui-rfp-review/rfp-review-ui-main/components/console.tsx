@@ -40,6 +40,7 @@ export function Console() {
   const canGenerate = allConfirmed && !generatingRecommendations
   const allComplete = response?.all_items_complete === true
   const selectedItem = results.find((r) => itemKey(r) === selectedKey) ?? null
+  const selectedFeedback = selectedItem ? feedback[itemKey(selectedItem)] : undefined
 
   const advanceTo = useCallback((key: StepKey) => {
     setCurrent(key)
@@ -193,6 +194,7 @@ export function Console() {
           item={selectedItem}
           documentId={String(response.document_id)}
           confirmed={selectedItem ? Boolean(confirmedItems[itemKey(selectedItem)]) : false}
+          correctedResult={selectedFeedback?.corrected_result}
           position={selectedIndex >= 0 ? selectedIndex + 1 : 0}
           total={results.length}
           onPrevious={() => selectRelativeItem(-1)}
