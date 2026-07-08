@@ -34,11 +34,13 @@ ALLOWED_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+ALLOWED_ORIGIN_SET = set(ALLOWED_ORIGINS)
+ALLOWED_ORIGIN_REGEX = r"https://.*\.vercel\.app"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

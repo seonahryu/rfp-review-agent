@@ -14,6 +14,8 @@ services:
         value: outputs
       - key: RFP_REVIEW_CONCURRENCY
         value: "1"
+      - key: RFP_ALLOWED_ORIGINS
+        value: "http://localhost:3000,https://rfp-review-ui.vercel.app,https://*.vercel.app,https://v0.dev,https://v0.app"
       - key: OPENAI_PDF_PAGES_PER_CALL
         value: "1"
       - key: OPENAI_PDF_TIMEOUT_SECONDS

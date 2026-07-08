@@ -14,9 +14,11 @@ for (const uiRoot of uiRoots) {
   for (const endpoint of ["/api/parse", "/api/review/check"]) {
     assert(
       apiClient.includes(`fetch(\`${"${BACKEND_API_URL}"}${endpoint}`),
-      `long-running endpoint ${endpoint} should call Render directly instead of Vercel proxy`,
+      `long-running endpoint ${endpoint} should try Render directly first`,
     )
   }
+  assert(apiClient.includes('fetch("/api/parse"'), "parse should keep a same-origin fallback")
+  assert(apiClient.includes('fetch("/api/review/check"'), "review check should keep a same-origin fallback")
 
   assert(
     apiClient.includes('fetch("/api/recommendations"'),
@@ -35,7 +37,21 @@ for (const uiRoot of uiRoots) {
     fs.existsSync(path.join(uiRoot, "app", "api", "recommendations", "route.ts")),
     "recommendation proxy route should exist",
   )
+  assert(
+    fs.existsSync(path.join(uiRoot, "app", "api", "parse", "route.ts")),
+    "parse fallback proxy route should exist",
+  )
+  assert(
+    fs.existsSync(path.join(uiRoot, "app", "api", "review", "check", "route.ts")),
+    "review check fallback proxy route should exist",
+  )
 }
+
+const renderYaml = fs.readFileSync(path.join(root, "render.yaml"), "utf8")
+assert(
+  renderYaml.includes("https://rfp-review-ui.vercel.app"),
+  "Render CORS origins should include the production UI URL",
+)
 
 assert(
   fs.existsSync(path.join(root, "rfp-review-ui-clone", "app", "api", "backend-health", "route.ts")),
