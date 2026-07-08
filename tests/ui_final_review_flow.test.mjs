@@ -25,8 +25,8 @@ for (const uiRoot of uiRoots) {
 
   assert(finalStep.includes("법령준수 개선권고 주요항목"), "final table should keep the legal item column")
   assert(finalStep.includes(">법령준수 여부<"), "final table should keep 법령준수 여부 column")
-  assert(!finalStep.includes("법령준수여부 복사"), "final step should not show row-level legal compliance copy")
-  assert(!finalStep.includes("권고내용 복사"), "final step should not show row-level recommendation copy")
+  assert(finalStep.includes("법령준수 여부 복사"), "final step should show row-level legal compliance copy")
+  assert(finalStep.includes("권고내용 복사"), "final step should show row-level recommendation copy")
   assert(recommendationStep.includes("법령준수여부 복사"), "recommendation step should include 법령준수여부 복사")
   assert(finalStep.includes(">권고내용<"), "final table should show recommendation content column")
   assert(finalStep.includes("<RotateCcw"), "final step should show a new-review action")
