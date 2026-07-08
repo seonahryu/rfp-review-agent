@@ -3,17 +3,41 @@ import fs from "node:fs"
 import path from "node:path"
 
 const root = process.cwd()
-const uiRoot = path.join(root, "rfp-review-ui-clone")
-const apiClient = fs.readFileSync(path.join(uiRoot, "lib", "api-client.ts"), "utf8")
+const uiRoots = [
+  path.join(root, "rfp-review-ui-clone"),
+  path.join(root, "ui-rfp-review", "rfp-review-ui-main"),
+].filter((candidate) => fs.existsSync(candidate))
 
-for (const endpoint of ["/api/parse", "/api/review/check", "/api/recommendations"]) {
+for (const uiRoot of uiRoots) {
+  const apiClient = fs.readFileSync(path.join(uiRoot, "lib", "api-client.ts"), "utf8")
+
+  for (const endpoint of ["/api/parse", "/api/review/check"]) {
+    assert(
+      apiClient.includes(`fetch(\`${"${BACKEND_API_URL}"}${endpoint}`),
+      `long-running endpoint ${endpoint} should call Render directly instead of Vercel proxy`,
+    )
+  }
+
   assert(
-    apiClient.includes(`fetch(\`${"${BACKEND_API_URL}"}${endpoint}`),
-    `long-running endpoint ${endpoint} should call Render directly instead of Vercel proxy`,
+    apiClient.includes('fetch("/api/recommendations"'),
+    "recommendation generation should use same-origin proxy to avoid browser CORS failures",
+  )
+  assert(
+    apiClient.includes("fetch(`/api/documents/"),
+    "document search should use same-origin proxy to avoid browser CORS failures",
+  )
+
+  assert(
+    fs.existsSync(path.join(uiRoot, "app", "api", "documents", "[document_id]", "search", "route.ts")),
+    "document search proxy route should exist",
+  )
+  assert(
+    fs.existsSync(path.join(uiRoot, "app", "api", "recommendations", "route.ts")),
+    "recommendation proxy route should exist",
   )
 }
 
 assert(
-  fs.existsSync(path.join(uiRoot, "app", "api", "backend-health", "route.ts")),
+  fs.existsSync(path.join(root, "rfp-review-ui-clone", "app", "api", "backend-health", "route.ts")),
   "backend health diagnostic route should remain available",
 )

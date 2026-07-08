@@ -512,9 +512,18 @@ async def search_document(document_id: int, q: str):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(rfp_page)").fetchall()
+        }
+        printed_page_select = (
+            "rfp_printed_page_no"
+            if "rfp_printed_page_no" in columns
+            else "NULL AS rfp_printed_page_no"
+        )
         rows = conn.execute(
-            """
-            SELECT page_no, rfp_printed_page_no, page_text
+            f"""
+            SELECT page_no, {printed_page_select}, page_text
             FROM rfp_page
             WHERE document_id = ?
               AND page_text LIKE ?
