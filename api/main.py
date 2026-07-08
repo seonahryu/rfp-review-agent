@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
+import hashlib
+import json
 import os
 import sqlite3
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,7 @@ from orchestrator import (
 
 app = FastAPI(title="RFP Legal Review API")
 LOW_CONFIDENCE_THRESHOLD = float(os.getenv("RFP_LOW_CONFIDENCE_THRESHOLD", "0.75"))
+PARSE_JOBS: dict[str, dict[str, Any]] = {}
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -96,6 +100,38 @@ def default_db_path() -> Path:
         if candidate.exists():
             return candidate
     return Path("rfp 법제도 검토항목.db")
+
+
+def output_dir_path() -> Path:
+    return Path(os.getenv("RFP_OUTPUT_DIR", "outputs"))
+
+
+def parse_cache_path() -> Path:
+    return output_dir_path() / "parse_cache.json"
+
+
+def load_parse_cache() -> dict[str, Any]:
+    path = parse_cache_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_parse_cache(cache: dict[str, Any]) -> None:
+    path = parse_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+
+
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def load_item_titles(db_path: Path) -> dict[str, str]:
@@ -275,7 +311,7 @@ def summary_for_ui(summary, db_path: Path) -> dict[str, Any]:
 
 async def run_review_pipeline(file: UploadFile, items: str | None):
     db_path = default_db_path()
-    output_dir = Path(os.getenv("RFP_OUTPUT_DIR", "outputs"))
+    output_dir = output_dir_path()
     suffix = Path(file.filename or "rfp.pdf").suffix or ".pdf"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         pdf_path = Path(handle.name)
@@ -290,7 +326,7 @@ async def run_review_pipeline(file: UploadFile, items: str | None):
 
 async def parse_uploaded_file(file: UploadFile):
     db_path = default_db_path()
-    output_dir = Path(os.getenv("RFP_OUTPUT_DIR", "outputs"))
+    output_dir = output_dir_path()
     suffix = Path(file.filename or "rfp.pdf").suffix or ".pdf"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
         pdf_path = Path(handle.name)
@@ -301,6 +337,34 @@ async def parse_uploaded_file(file: UploadFile):
         document = pipeline.parser.parse(pdf_path)
         audited = pipeline.audit.audit(document)
         return pipeline, audited
+    finally:
+        pdf_path.unlink(missing_ok=True)
+
+
+def parse_pdf_path(pdf_path: Path, file_hash: str | None = None):
+    db_path = default_db_path()
+    output_dir = output_dir_path()
+    pipeline = RfpReviewPipeline(db_path=db_path, output_dir=output_dir)
+    document = pipeline.parser.parse(pdf_path)
+    audited = pipeline.audit.audit(document)
+    result = parsed_document_response(audited)
+    if file_hash:
+        result["file_hash"] = file_hash
+    return result
+
+
+async def run_parse_job(job_id: str, pdf_path: Path) -> None:
+    PARSE_JOBS[job_id]["status"] = "running"
+    try:
+        file_hash = PARSE_JOBS[job_id].get("file_hash")
+        result = await asyncio.to_thread(parse_pdf_path, pdf_path, file_hash)
+        if file_hash:
+            cache = load_parse_cache()
+            cache[file_hash] = result
+            save_parse_cache(cache)
+        PARSE_JOBS[job_id].update({"status": "succeeded", "result": result})
+    except Exception as err:
+        PARSE_JOBS[job_id].update({"status": "failed", "error": str(err)})
     finally:
         pdf_path.unlink(missing_ok=True)
 
@@ -336,7 +400,7 @@ def normalize_items(value: str | list[str] | None) -> list[str]:
 
 async def run_review_check(document_id: int, items: list[str]) -> dict[str, Any]:
     db_path = default_db_path()
-    output_dir = Path(os.getenv("RFP_OUTPUT_DIR", "outputs"))
+    output_dir = output_dir_path()
     pipeline = RfpReviewPipeline(db_path=db_path, output_dir=output_dir)
     document = pipeline.parser.load(document_id)
     audited = pipeline.audit.audit(document)
@@ -426,7 +490,7 @@ def final_review_from_payload(item: RecommendationReviewInput) -> FinalReview:
 
 def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:
     db_path = default_db_path()
-    output_dir = Path(os.getenv("RFP_OUTPUT_DIR", "outputs"))
+    output_dir = output_dir_path()
     pipeline = RfpReviewPipeline(db_path=db_path, output_dir=output_dir)
     document = pipeline.parser.load(payload.document_id)
     audited = pipeline.audit.audit(document)
@@ -490,6 +554,40 @@ async def review_json(
 async def parse_pdf(file: UploadFile = File(...)):
     _, document = await parse_uploaded_file(file)
     return JSONResponse(parsed_document_response(document))
+
+
+@app.post("/api/parse/start")
+async def parse_pdf_start(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "rfp.pdf").suffix or ".pdf"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+        pdf_path = Path(handle.name)
+        handle.write(await file.read())
+
+    file_hash = hash_file(pdf_path)
+    cached = load_parse_cache().get(file_hash)
+    job_id = uuid.uuid4().hex
+    if cached:
+        PARSE_JOBS[job_id] = {
+            "job_id": job_id,
+            "status": "succeeded",
+            "file_hash": file_hash,
+            "cache_hit": True,
+            "result": cached,
+        }
+        pdf_path.unlink(missing_ok=True)
+        return JSONResponse({"job_id": job_id, "status": "succeeded", "file_hash": file_hash, "cache_hit": True})
+
+    PARSE_JOBS[job_id] = {"job_id": job_id, "status": "queued", "file_hash": file_hash, "cache_hit": False}
+    asyncio.create_task(run_parse_job(job_id, pdf_path))
+    return JSONResponse({"job_id": job_id, "status": "queued", "file_hash": file_hash, "cache_hit": False})
+
+
+@app.get("/api/jobs/{job_id}")
+async def job_status(job_id: str):
+    job = PARSE_JOBS.get(job_id)
+    if job is None:
+        return JSONResponse({"error": "작업을 찾을 수 없습니다."}, status_code=404)
+    return JSONResponse(job)
 
 
 @app.post("/api/review/check")
