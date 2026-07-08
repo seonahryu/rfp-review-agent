@@ -39,6 +39,7 @@ export type UserFeedback = {
   comment?: string
   note?: string
   corrected_result?: string
+  manual_compliance_content?: string
   corrected_evidence_pairs?: EvidencePair[]
   resolved?: boolean
 }

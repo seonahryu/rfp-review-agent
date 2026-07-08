@@ -26,7 +26,7 @@ export function RecommendationStep({
   const results = response.results ?? []
   const displayItems = results
   const feedbackCount = Object.values(feedback).filter(
-    (f) => f?.comment || f?.note || f?.corrected_result || f?.corrected_evidence_pairs?.length,
+    (f) => f?.corrected_result || f?.manual_compliance_content,
   ).length
   const emptyContent = displayItems.filter((r) => !((r.compliance_content ?? "").trim()))
 
@@ -46,7 +46,7 @@ export function RecommendationStep({
       <div className="mx-auto max-w-4xl px-8 py-6">
         <div className="mb-4 grid grid-cols-3 gap-3">
           <Tile label="전체 항목" value={displayItems.length} />
-          <Tile label="수정 의견 반영" value={feedbackCount} />
+          <Tile label="수정/직접 입력" value={feedbackCount} />
           <Tile label="권고내용 누락" value={emptyContent.length} accent={emptyContent.length > 0} />
         </div>
 

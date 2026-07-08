@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from agents.models import FinalReview, ReviewResult
+from agents.models import ComplianceContent, FinalReview, ReviewResult
 from orchestrator import (
     DEFAULT_ITEM_NOS,
     RfpReviewPipeline,
@@ -65,6 +65,7 @@ class EvidencePairInput(BaseModel):
 class UserFeedbackInput(BaseModel):
     comment: str = ""
     corrected_result: str = ""
+    manual_compliance_content: str = ""
     corrected_evidence_pairs: list[EvidencePairInput] = Field(default_factory=list)
     resolved: bool = False
 
@@ -194,6 +195,7 @@ def user_feedback_template() -> dict[str, Any]:
         "status": "not_submitted",
         "comment": "",
         "corrected_result": "",
+        "manual_compliance_content": "",
         "corrected_evidence_pairs": [],
         "resolved": False,
     }
@@ -502,6 +504,7 @@ def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:
         pipeline.rag,
         pipeline.compliance_content,
     )
+    final_reviews = apply_manual_compliance_contents(final_reviews, payload)
     excel_path = pipeline.report.write_excel(
         audited.document_id,
         list(final_reviews),
@@ -524,6 +527,33 @@ def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:
     data["workflow_gates"]["recommendation_generation_mode"] = "split_endpoint"
     data["next_step"] = "final_results"
     return data
+
+
+def apply_manual_compliance_contents(
+    final_reviews: list[FinalReview], payload: RecommendationRequest
+) -> list[FinalReview]:
+    manual_by_item = {
+        str(item.item_no): item.user_feedback.manual_compliance_content.strip()
+        for item in payload.results
+        if item.user_feedback and item.user_feedback.manual_compliance_content.strip()
+    }
+    if not manual_by_item:
+        return final_reviews
+
+    for review in final_reviews:
+        manual_content = manual_by_item.get(str(review.item_no))
+        if not manual_content:
+            continue
+        review.compliance_content = ComplianceContent(
+            item_no=str(review.item_no),
+            content_type="user_entered_compliance_content",
+            primary_evidence_pages=list(review.evidence_pages),
+            used_evidence_pages=list(review.evidence_pages),
+            compliance_content=manual_content,
+            tacit_knowledge_used=[],
+            warnings=["user_entered"],
+        )
+    return final_reviews
 
 
 @app.post("/review")

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { CheckCircle2, ChevronDown, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { StatusBadge, AttentionBadge } from "@/components/status-badge"
 import {
@@ -40,6 +41,7 @@ export function ResultItemCard({
   onUnconfirm: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const [manualContent, setManualContent] = useState(feedback?.manual_compliance_content ?? "")
   const attention = item.user_action_required || item.needs_user_attention
   const status = normalizeStatus(item)
   const initialResult = status === "unknown" ? "" : STATUS_LABEL[status]
@@ -54,6 +56,7 @@ export function ResultItemCard({
     onConfirm({
       status: "submitted",
       corrected_result: correctedResult,
+      manual_compliance_content: manualContent.trim(),
       resolved: true,
     })
     setOpen(false)
@@ -157,6 +160,17 @@ export function ResultItemCard({
               })}
             </div>
           </div>
+
+          <Label className="mt-4 block text-sm font-medium">권고내용 직접 입력</Label>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            입력하면 권고 문장 생성 단계에서 자동 생성 권고내용보다 우선 반영됩니다.
+          </p>
+          <Textarea
+            value={manualContent}
+            onChange={(e) => setManualContent(e.target.value)}
+            placeholder="예: 제안요청서에 해당 법제도 준수 항목을 명시하시기 바랍니다."
+            className="mt-2 min-h-20"
+          />
 
           <div className="mt-4 flex justify-end gap-2">
             {confirmed && (
