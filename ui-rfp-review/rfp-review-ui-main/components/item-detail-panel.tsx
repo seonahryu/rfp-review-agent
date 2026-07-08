@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { CheckCircle2, FileSearch, Loader2, Search, X } from "lucide-react"
+import { CheckCircle2, ChevronLeft, ChevronRight, FileSearch, Loader2, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -15,11 +15,19 @@ export function ItemDetailPanel({
   item,
   documentId,
   confirmed,
+  position,
+  total,
+  onPrevious,
+  onNext,
   onClose,
 }: {
   item: ReviewItem | null
   documentId: string
   confirmed: boolean
+  position: number
+  total: number
+  onPrevious: () => void
+  onNext: () => void
   onClose: () => void
 }) {
   const [query, setQuery] = useState("")
@@ -50,10 +58,25 @@ export function ItemDetailPanel({
     <aside className="flex w-[22rem] shrink-0 flex-col border-l border-border bg-card">
       <div className="border-b border-border px-5 py-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-foreground">항목 상세</h3>
-          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="항목 상세 닫기">
-            <X className="size-4" />
-          </Button>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">항목 상세</h3>
+            {total > 0 && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {position} / {total}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="icon" onClick={onPrevious} disabled={position <= 1} aria-label="이전 항목">
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" onClick={onNext} disabled={position >= total} aria-label="다음 항목">
+              <ChevronRight className="size-4" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="항목 상세 닫기">
+              <X className="size-4" />
+            </Button>
+          </div>
         </div>
       </div>
 

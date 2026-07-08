@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { StepHeader } from "@/components/step-header"
 import { StatusBadge } from "@/components/status-badge"
 import { CopyButton } from "@/components/copy-button"
-import { normalizeStatus, type ReviewItem, type ReviewResponse } from "@/lib/types"
+import { normalizeStatus, type ReviewResponse } from "@/lib/types"
 
 export function FinalStep({
   response,
@@ -15,7 +15,7 @@ export function FinalStep({
   onReset: () => void
 }) {
   const results = response.results ?? []
-  const targets = results.filter((r: ReviewItem) => r.is_target !== false)
+  const displayItems = results
   const opinion = response.review_opinion
 
   return (
@@ -45,7 +45,7 @@ export function FinalStep({
               </tr>
             </thead>
             <tbody>
-              {targets.map((item) => {
+              {displayItems.map((item) => {
                 const status = normalizeStatus(item)
                 return (
                   <tr key={String(item.item_no)} className="border-b border-border align-top last:border-0">
@@ -83,7 +83,7 @@ export function FinalStep({
           </div>
           {opinion && (
             <p className="mt-2 text-xs text-muted-foreground">
-              총 {opinion.total_count ?? targets.length}개 항목 중 {opinion.non_compliant_count ?? 0}개 항목 미준수 및{" "}
+              총 {opinion.total_count ?? displayItems.length}개 항목 중 {opinion.non_compliant_count ?? 0}개 항목 미준수 및{" "}
               {opinion.needs_revision_count ?? 0}개 항목 보완 권고
             </p>
           )}

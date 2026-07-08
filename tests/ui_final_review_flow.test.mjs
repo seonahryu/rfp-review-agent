@@ -43,6 +43,8 @@ for (const uiRoot of uiRoots) {
   assert(finalStep.includes(">법령준수 여부<"), "final table should keep 법령준수 여부 column")
   assert(finalStep.includes("법령준수 여부 복사"), "final step should show row-level legal compliance copy")
   assert(finalStep.includes("권고내용 복사"), "final step should show row-level recommendation copy")
+  assert(finalStep.includes("const displayItems = results"), "final step should show every reviewed item")
+  assert(!finalStep.includes("results.filter((r: ReviewItem) => r.is_target !== false)"), "final step should not hide not-applicable items")
   assert(recommendationStep.includes("법령준수여부 복사"), "recommendation step should include 법령준수여부 복사")
   assert(recommendationStep.includes("const displayItems = results"), "recommendation step should show not-applicable items too")
   assert(!recommendationStep.includes("results.filter((r: ReviewItem) => r.is_target !== false)"), "recommendation step should not hide not-applicable items")
@@ -55,6 +57,8 @@ for (const uiRoot of uiRoots) {
 
   assert(itemDetailPanel.includes("onClose"), "detail panel should accept a close handler")
   assert(itemDetailPanel.includes("항목 상세 닫기"), "detail panel should expose a close button")
+  assert(itemDetailPanel.includes("onPrevious"), "detail panel should support previous item navigation")
+  assert(itemDetailPanel.includes("onNext"), "detail panel should support next item navigation")
   assert(itemDetailPanel.includes("HighlightedText"), "search results should highlight matching keywords")
   assert(itemDetailPanel.includes("PDF {hit.pdf_page}"), "search results should show PDF page when different")
   assert(consoleView.includes("detailPanelOpen"), "console should track detail panel visibility")
@@ -71,5 +75,7 @@ for (const uiRoot of uiRoots) {
   assert(!itemDetailPanel.includes("HighlightedEvidence"), "judgement evidence should not be specially highlighted")
   assert(itemDetailPanel.includes('DetailRow label="대상"'), "detail panel should show legal target criteria")
   assert(itemDetailPanel.includes("준수 항목"), "detail panel should show legal requirement criteria")
+  assert(consoleView.includes("const confirmableItems = results"), "console should require confirmation for every reviewed item")
+  assert(consoleView.includes("selectRelativeItem"), "console should let detail panel move between reviewed items")
   assert(apiClient.includes("user_feedback: feedback[String(item.item_no)]"), "recommendation generation should send item feedback")
 }
