@@ -188,7 +188,6 @@ def build_review_opinion(results: list[dict[str, Any]]) -> dict[str, Any]:
     non_compliant = [item for item in results if item["normalized_result"] == "미준수"]
     needs_revision = [item for item in results if item["normalized_result"] == "보완필요"]
     lines = [
-        "검토의견",
         f"총 {total}개 항목 중 {len(non_compliant)}개 항목 미준수 및 {len(needs_revision)}개 항목 보완 권고",
         "",
     ]
@@ -515,7 +514,7 @@ async def search_document(document_id: int, q: str):
     try:
         rows = conn.execute(
             """
-            SELECT page_no, page_text
+            SELECT page_no, rfp_printed_page_no, page_text
             FROM rfp_page
             WHERE document_id = ?
               AND page_text LIKE ?
@@ -529,7 +528,8 @@ async def search_document(document_id: int, q: str):
             "query": q,
             "results": [
                 {
-                    "page": row["page_no"],
+                    "page": row["rfp_printed_page_no"] or row["page_no"],
+                    "pdf_page": row["page_no"],
                     "text": make_snippet(row["page_text"], q),
                 }
                 for row in rows
