@@ -148,7 +148,12 @@ export function ResultItemCard({
                     key={option.value}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => setCorrectedResult(option.value)}
+                    onClick={() => {
+                      setCorrectedResult(option.value)
+                      if (option.value === "해당없음" && !manualContent.trim()) {
+                        setManualContent("해당없음")
+                      }
+                    }}
                     className={cn(
                       "h-9 rounded-md border px-2 text-sm font-medium transition-colors",
                       active ? option.className : "border-border bg-background text-muted-foreground hover:bg-muted",
@@ -165,6 +170,10 @@ export function ResultItemCard({
           <p className="mt-0.5 text-xs text-muted-foreground">
             입력하면 권고 문장 생성 단계에서 자동 생성 권고내용보다 우선 반영됩니다.
           </p>
+          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+            <p>준수: 제안요청서 p._ 명시</p>
+            <p>해당없음: 해당없음</p>
+          </div>
           <Textarea
             value={manualContent}
             onChange={(e) => setManualContent(e.target.value)}
