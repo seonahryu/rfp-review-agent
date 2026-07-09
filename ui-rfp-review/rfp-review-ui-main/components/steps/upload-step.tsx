@@ -7,12 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StepHeader } from "@/components/step-header"
-import { parsePdf, checkReview } from "@/lib/api-client"
+import { checkReview, parsePdf } from "@/lib/api-client"
 import type { ReviewResponse } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const ITEMS_HELP =
-  "입력하지 않으면 전체 18개 항목을 검토합니다. 일부 법제도 항목만 테스트하려면 해당 법제도 항목 번호를 1,2,3처럼 입력하세요."
+  "입력하지 않으면 전체 18개 항목을 검토합니다. 일부 항목만 테스트하려면 1,2,3처럼 번호를 입력하세요."
 
 export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => void }) {
   const [file, setFile] = useState<File | null>(null)
@@ -40,9 +40,9 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
     try {
       setStatus("PDF를 파싱하고 있습니다.")
       const parsed = await parsePdf(file)
-      setStatus("법제도 검토와 검증을 진행하고 있습니다.")
+      setStatus("법제도 검토를 진행하고 있습니다.")
       const reviewed = await checkReview(String(parsed.document_id), items)
-      toast.success("검토 요청이 완료되었습니다.")
+      toast.success("검토가 완료되었습니다.")
       onComplete({
         ...reviewed,
         parse_status: reviewed.parse_status || parsed.parse_status,
@@ -61,7 +61,7 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
 
   return (
     <div>
-      <StepHeader step={1} title="업로드" description="RFP PDF를 업로드하고 검토를 시작합니다." />
+      <StepHeader step={1} title="업로드" description="RFP PDF를 업로드하면 바로 법제도 검토를 진행합니다." />
       <div className="mx-auto max-w-2xl px-8 py-8">
         <div className="rounded-lg border border-border bg-card p-6">
           <Label className="text-sm font-medium">RFP PDF 파일</Label>
@@ -90,9 +90,7 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
             )}
           >
             <UploadCloud className="size-8 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">
-              PDF 파일을 여기에 끌어오거나 클릭하여 선택
-            </p>
+            <p className="text-sm font-medium text-foreground">PDF 파일을 끌어오거나 클릭하여 선택</p>
             <p className="text-xs text-muted-foreground">RFP PDF 파일 1개를 업로드합니다.</p>
             <input
               ref={inputRef}

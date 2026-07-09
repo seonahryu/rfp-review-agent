@@ -17,8 +17,8 @@ export function StepSidebar({ current, maxReached, onNavigate }: StepSidebarProp
   return (
     <nav aria-label="검토 단계" className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="border-b border-sidebar-border px-5 py-4">
-        <h1 className="text-sm font-semibold text-sidebar-foreground">RFP 법제도 검토 콘솔</h1>
-        <p className="mt-0.5 text-xs text-muted-foreground">단계별 컨펌 기반 검토</p>
+        <h1 className="text-sm font-semibold text-sidebar-foreground">RFP 법제도 검토</h1>
+        <p className="mt-0.5 text-xs text-muted-foreground">검토결과 확인과 최종 복사 흐름</p>
       </div>
       <ol className="flex flex-1 flex-col gap-1 p-3">
         {STEPS.map((step, idx) => {
@@ -64,7 +64,7 @@ export function StepSidebar({ current, maxReached, onNavigate }: StepSidebarProp
         })}
       </ol>
       <div className="border-t border-sidebar-border px-5 py-3">
-        <p className="text-xs leading-relaxed text-muted-foreground">다음 단계로 진행하려면 각 단계의 확인 절차가 필요합니다.</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">업로드가 끝나면 바로 검토결과 확인으로 이동합니다.</p>
       </div>
     </nav>
   )

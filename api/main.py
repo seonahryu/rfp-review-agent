@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict
 import os
+import re
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -230,6 +231,19 @@ def normalize_result_label(value: str) -> str:
     return text
 
 
+def normalize_result_label(value: str) -> str:
+    text = str(value or "").strip()
+    if "미준수" in text:
+        return "미준수"
+    if "보완" in text:
+        return "보완필요"
+    if "해당없음" in text or "해당 없음" in text:
+        return "해당없음"
+    if "준수" in text:
+        return "준수"
+    return text
+
+
 def build_review_opinion(results: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(results)
     non_compliant = [item for item in results if item["normalized_result"] == "미준수"]
@@ -300,6 +314,128 @@ def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str,
         },
         "raw_reviews": [item.to_dict() for item in review.reviews],
     }
+
+
+def build_review_opinion(results: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(results)
+    non_compliant = [item for item in results if item["normalized_result"] == "미준수"]
+    needs_revision = [item for item in results if item["normalized_result"] == "보완필요"]
+    if needs_revision:
+        first_line = f"ㅇ 총 {total}개 항목 중 {len(non_compliant)}개 항목 미준수, {len(needs_revision)}개 항목 보완필요"
+    else:
+        first_line = f"ㅇ 총 {total}개 항목 중 {len(non_compliant)}개 항목 미준수"
+
+    lines = [first_line]
+    for item in non_compliant + needs_revision:
+        title = item["law_name"] or f"{item['item_no']}번 항목"
+        content = item["compliance_content"] or item["recommendation"] or item["reason"]
+        lines.append(f"{item['item_no']}. {title}")
+        lines.append(f"  - {summarize_opinion_content(str(item['item_no']), content)}")
+
+    return {
+        "total_count": total,
+        "non_compliant_count": len(non_compliant),
+        "needs_revision_count": len(needs_revision),
+        "copy_text": "\n".join(lines).rstrip(),
+    }
+
+
+def summarize_opinion_content(item_no: str, content: str) -> str:
+    text = " ".join(str(content or "").split())
+    text = text.replace("→", " ")
+    text = re.sub(r"제안요청서\s*p{1,2}\.\s*\d+(?:\s*[-~]\s*\d+)?(?:\s*,\s*)*", "", text)
+    text = re.sub(r"p{1,2}\.\s*\d+(?:\s*[-~]\s*\d+)?(?:\s*,\s*)*", "", text)
+    text = text.replace("제안요청서에 ", "")
+    text = text.replace("제안요청서 내 ", "")
+    text = text.replace("제안요청서 ", "")
+    text = text.replace("작성하여 첨부하시기 바랍니다.", "첨부 필요")
+    text = text.replace("첨부하시기 바랍니다.", "첨부 필요")
+    text = text.replace("명시하시기 바랍니다.", "명시 필요")
+    text = text.replace("하시기 바랍니다.", "필요")
+    text = text.replace("하여야 합니다.", "필요")
+    text = re.sub(r"^\s*(일부\s*)?명시\s*", "", text).strip()
+    if item_no == "17" and "영향평가" in text and "결과서" in text:
+        return "SW사업 영향평가 결과서 첨부 필요"
+    if len(text) > 90:
+        text = text[:87].rstrip() + "..."
+    return text or "보완 필요"
+
+
+def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    compliance = review.compliance_content
+    verification = review.verification_audit
+    detailed_assessment = build_internal_assessment(
+        str(review.item_no),
+        list(review.evidence_pages),
+        list(review.evidence_text),
+    )
+    normalized_result = (
+        detailed_assessment["final_result"]
+        if detailed_assessment is not None
+        else normalize_result_label(review.final_result)
+    )
+    compliance_text = compliance.compliance_content if compliance is not None else ""
+    if detailed_assessment is not None:
+        compliance_text = internal_assessment_compliance_text(detailed_assessment)
+    criteria = item_criteria.get(str(review.item_no), {})
+    return {
+        "item_no": review.item_no,
+        "law_name": criteria.get("title"),
+        "target_text": criteria.get("target_text", ""),
+        "requirement_texts": criteria.get("requirement_texts", []),
+        "review_result": normalized_result if detailed_assessment is not None else review.final_result,
+        "normalized_result": normalized_result,
+        "final_status": review.final_status,
+        "is_target": review.is_target,
+        "confidence": review.confidence,
+        "reason": detailed_assessment.get("reason") if detailed_assessment is not None else review.reason,
+        "recommendation": review.recommendation,
+        "evidence_pages": review.evidence_pages,
+        "evidence_text": review.evidence_text,
+        "evidence_pairs": evidence_pairs(review),
+        "warnings": review.warnings,
+        "verification": asdict(verification) if verification is not None else None,
+        "compliance_content": compliance_text,
+        "compliance": asdict(compliance) if compliance is not None else None,
+        "detailed_assessment": detailed_assessment,
+        "needs_user_attention": needs_user_attention(review),
+        "user_action_required": needs_user_attention(review),
+        "attention_reasons": attention_reasons(review),
+        "user_feedback": user_feedback_template(),
+        "copy_texts": {
+            "review_result": normalized_result,
+            "compliance_content": compliance_text,
+            "internal_assessment": internal_assessment_copy_text(review, detailed_assessment)
+            if detailed_assessment is not None
+            else "",
+        },
+        "raw_reviews": [item.to_dict() for item in review.reviews],
+    }
+
+
+def internal_assessment_compliance_text(assessment: dict[str, Any]) -> str:
+    if assessment["final_result"] == "준수":
+        return "내부 검토표의 모든 항목이 명시되어 있습니다."
+    return str(assessment.get("recommendation") or assessment.get("reason") or "미명시 항목을 보완하시기 바랍니다.").strip()
+
+
+def internal_assessment_copy_text(review, assessment: dict[str, Any] | None) -> str:
+    if assessment is None:
+        return ""
+    lines = [
+        f"{review.item_no}. {assessment.get('title', '')}",
+        "",
+        "구분\t내용\t명시 여부",
+    ]
+    for row in assessment.get("rows", []):
+        lines.append(
+            f"{row.get('no', '')}\t{row.get('title', '')}\n"
+            f"{row.get('content', '')}\t{row.get('explicit_status', '')}"
+        )
+    lines.extend(["", f"최종 판단\t{assessment.get('final_result', '')}"])
+    if assessment.get("reason"):
+        lines.append(f"판단 근거\t{assessment['reason']}")
+    return "\n".join(lines).strip()
 
 
 def summary_for_ui(summary, db_path: Path) -> dict[str, Any]:

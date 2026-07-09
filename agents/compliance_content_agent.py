@@ -181,6 +181,10 @@ def tacit_knowledge(rag: RagContext) -> list[str]:
 
 def concrete_recommendation(review: FinalReview, rag: RagContext) -> str:
     recommendation = str(review.recommendation or review.reason or "").strip()
+    if str(review.item_no) == "17":
+        compact = normalize(recommendation)
+        if "영향평가" in compact and "결과서" in compact:
+            return "SW사업 영향평가 결과서를 작성하여 첨부하시기 바랍니다."
     if recommendation and not is_generic_recommendation(recommendation):
         return strip_rfp_page_references(recommendation)
     requirement = missing_requirement_from_rag(rag)

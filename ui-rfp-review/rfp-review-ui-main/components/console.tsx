@@ -7,8 +7,6 @@ import { generateRecommendations } from "@/lib/api-client"
 import { type StepKey, stepIndexOf } from "@/lib/steps"
 import { StepSidebar } from "@/components/step-sidebar"
 import { UploadStep } from "@/components/steps/upload-step"
-import { ParseStep } from "@/components/steps/parse-step"
-import { ProgressStep } from "@/components/steps/progress-step"
 import { ResultsStep } from "@/components/steps/results-step"
 import { RecommendationStep } from "@/components/steps/recommendation-step"
 import { FinalStep } from "@/components/steps/final-step"
@@ -22,8 +20,6 @@ export function Console() {
   const [response, setResponse] = useState<ReviewResponse | null>(null)
   const [current, setCurrent] = useState<StepKey>("upload")
   const [maxReached, setMaxReached] = useState<StepKey>("upload")
-
-  const [parseConfirmed, setParseConfirmed] = useState(false)
   const [confirmedItems, setConfirmedItems] = useState<Record<string, boolean>>({})
   const [feedback, setFeedback] = useState<Record<string, UserFeedback>>({})
   const [recommendationConfirmed, setRecommendationConfirmed] = useState(false)
@@ -32,10 +28,9 @@ export function Console() {
   const [generatingRecommendations, setGeneratingRecommendations] = useState(false)
 
   const results = response?.results ?? []
-  const confirmableItems = results
   const allConfirmed = useMemo(
-    () => confirmableItems.length > 0 && confirmableItems.every((r) => confirmedItems[itemKey(r)]),
-    [confirmableItems, confirmedItems],
+    () => results.length > 0 && results.every((r) => confirmedItems[itemKey(r)]),
+    [results, confirmedItems],
   )
   const canGenerate = allConfirmed && !generatingRecommendations
   const allComplete = response?.all_items_complete === true
@@ -56,7 +51,6 @@ export function Console() {
 
   const handleReviewComplete = useCallback((resp: ReviewResponse) => {
     setResponse(resp)
-    setParseConfirmed(false)
     setConfirmedItems({})
     setFeedback({})
     setRecommendationConfirmed(false)
@@ -64,13 +58,12 @@ export function Console() {
     const first = resp.results?.[0]
     setSelectedKey(first ? itemKey(first) : null)
     setDetailPanelOpen(true)
-    setCurrent("parse")
-    setMaxReached("parse")
+    setCurrent("results")
+    setMaxReached("results")
   }, [])
 
   const handleReset = useCallback(() => {
     setResponse(null)
-    setParseConfirmed(false)
     setConfirmedItems({})
     setFeedback({})
     setRecommendationConfirmed(false)
@@ -80,12 +73,6 @@ export function Console() {
     setCurrent("upload")
     setMaxReached("upload")
   }, [])
-
-  const confirmParse = useCallback(() => {
-    setParseConfirmed(true)
-    advanceTo("progress")
-    toast.success("PDF 파싱 검증 결과를 확인했습니다.")
-  }, [advanceTo])
 
   const confirmItem = useCallback((key: string, fb: UserFeedback) => {
     setConfirmedItems((prev) => ({ ...prev, [key]: true }))
@@ -153,12 +140,6 @@ export function Console() {
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           {current === "upload" && <UploadStep onComplete={handleReviewComplete} />}
-          {current === "parse" && response && (
-            <ParseStep response={response} confirmed={parseConfirmed} onConfirm={confirmParse} onReset={handleReset} />
-          )}
-          {current === "progress" && response && (
-            <ProgressStep response={response} onProceed={() => advanceTo("results")} />
-          )}
           {current === "results" && response && (
             <ResultsStep
               response={response}
@@ -177,15 +158,15 @@ export function Console() {
             <RecommendationStep
               response={response}
               feedback={feedback}
+              selectedKey={selectedKey}
               confirmed={recommendationConfirmed}
               allComplete={allComplete}
+              onSelect={selectItem}
               onConfirm={confirmRecommendation}
               onBack={() => setCurrent("results")}
             />
           )}
-          {current === "final" && response && (
-            <FinalStep response={response} onReset={handleReset} />
-          )}
+          {current === "final" && response && <FinalStep response={response} onReset={handleReset} />}
         </div>
       </main>
 

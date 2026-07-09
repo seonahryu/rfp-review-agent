@@ -7,24 +7,32 @@ ITEM_5_ROWS = [
     {
         "no": "1",
         "title": "<작업장소 상호협의 등>",
-        "content": "제안요청서 등에 작업장소 상호협의 또는 제공여부 등을 명시하고 있는지 여부(작업장소 등 관련 비용 계상여부 포함)",
+        "content": (
+            "제안요청서 등에 작업장소 상호협의 또는 제공여부 등을 명시하고 있는지 여부"
+            "(작업장소 등 관련 비용 계상여부 포함)"
+        ),
         "requirements": [
             ["작업장소", "상호", "협의"],
             ["작업장소", "제공"],
             ["작업장소", "비용"],
             ["제안가격", "포함"],
         ],
+        "missing_action": "작업장소 상호협의 또는 제공여부와 작업장소 관련 비용 계상여부를 명시하시기 바랍니다.",
     },
     {
         "no": "2",
         "title": "<원격지 개발 장소 제시·검토 절차>",
-        "content": "제안요청서 등에 공급자에 의한 작업장소 제시 및 그에 따른 발주기관의 검토절차 등을 명시하고 있는지 여부",
+        "content": (
+            "제안요청서 등에 공급자에 의한 작업장소 제시 및 그에 따른 발주기관의 "
+            "검토절차 등을 명시하고 있는지 여부"
+        ),
         "requirements": [
             ["원격지", "개발", "장소", "제시"],
             ["작업장소", "제시"],
             ["발주기관", "검토"],
             ["검토", "절차"],
         ],
+        "missing_action": "공급자의 원격지 개발 장소 제시와 발주기관의 검토절차를 명시하시기 바랍니다.",
     },
     {
         "no": "3",
@@ -35,8 +43,9 @@ ITEM_5_ROWS = [
             ["작업장소", "보안"],
             ["보안", "요구사항"],
             ["출입", "통제"],
-            ["저장매체", "반출입"],
+            ["저장매체", "반출"],
         ],
+        "missing_action": "원격지 개발 장소 및 작업장소 관련 보안요구사항을 명시하시기 바랍니다.",
     },
 ]
 
@@ -45,18 +54,25 @@ ITEM_6_ROWS = [
     {
         "no": "1",
         "title": "<지식재산권 공동귀속>",
-        "content": "제안요청서 등에 지식재산의 공동귀속 적용 여부",
+        "content": (
+            "제안요청서 등에 지식재산의 공동귀속 적용 여부. 발주기관 귀속의 경우 "
+            "계약목적물의 특수성에 따른 구체적 사유가 명시되어 있는지 여부"
+        ),
         "requirements": [
             ["지식재산", "공동귀속"],
             ["지식재산권", "공동"],
             ["계약목적물", "지식재산권"],
             ["공동", "귀속"],
         ],
+        "missing_action": "지식재산권 공동귀속 적용 여부를 명시하시기 바랍니다.",
     },
     {
         "no": "2",
         "title": "<SW산출물 반출 절차 등>",
-        "content": "제안요청서 내 SW산출물 활용촉진을 위한 반출절차를 적용하고 있는지 여부",
+        "content": (
+            "제안요청서 내 SW산출물 활용촉진을 위한 반출절차 적용 여부, 반출 요청절차, "
+            "누출금지정보 삭제 및 확약서 제출, 제3자 제공 시 사전승인, 위반 시 입찰참가자격 제한 명시 여부"
+        ),
         "requirements": [
             ["SW산출물", "반출", "요청"],
             ["산출물", "반출", "절차"],
@@ -66,6 +82,10 @@ ITEM_6_ROWS = [
             ["입찰참가자격", "제한"],
         ],
         "full_match_count": 5,
+        "missing_action": (
+            "SW산출물 반출 요청절차, 누출금지정보 삭제 및 확약서 제출, 제3자 제공 시 사전승인, "
+            "위반 시 입찰참가자격 제한 내용을 명시하시기 바랍니다."
+        ),
     },
 ]
 
@@ -78,8 +98,10 @@ def build_internal_assessment(
     item = str(item_no).strip()
     if item == "5":
         rows = ITEM_5_ROWS
+        title = "SW사업 작업장소(원격개발)"
     elif item == "6":
         rows = ITEM_6_ROWS
+        title = "SW사업 산출물 활용 보장"
     else:
         return None
 
@@ -87,11 +109,12 @@ def build_internal_assessment(
     final_result = final_result_from_rows(assessed_rows)
     return {
         "item_no": item,
-        "title": "SW사업 작업장소(원격개발)" if item == "5" else "SW사업 산출물 활용 보장",
+        "title": title,
         "columns": ["구분", "내용", "명시 여부"],
         "rows": assessed_rows,
         "final_result": final_result,
         "reason": reason_from_rows(assessed_rows, final_result),
+        "recommendation": recommendation_from_rows(assessed_rows),
     }
 
 
@@ -126,6 +149,7 @@ def assess_row(row: dict[str, Any], evidence_pages: list[int], evidence_text: li
         "content": row["content"],
         "explicit_status": explicit_status,
         "matched_requirements": matched_requirements,
+        "missing_action": row["missing_action"],
         "evidence_pairs": dedupe_evidence_pairs(evidence_pairs),
     }
 
@@ -141,9 +165,14 @@ def final_result_from_rows(rows: list[dict[str, Any]]) -> str:
 
 def reason_from_rows(rows: list[dict[str, Any]], final_result: str) -> str:
     if final_result == "준수":
-        return "내부 검토표의 모든 세부 항목이 RFP 근거에서 명시로 확인되었습니다."
-    missing = [f"{row['no']}. {row['title']}" for row in rows if row["explicit_status"] != "명시"]
+        return "내부 검토표의 모든 항목이 RFP 근거에서 명시로 확인되었습니다."
+    missing = [f"{row['no']}. {row['title']}({row['explicit_status']})" for row in rows if row["explicit_status"] != "명시"]
     return "명시가 부족한 내부 항목: " + ", ".join(missing)
+
+
+def recommendation_from_rows(rows: list[dict[str, Any]]) -> str:
+    actions = [row["missing_action"] for row in rows if row["explicit_status"] != "명시"]
+    return "\n".join(dict.fromkeys(actions))
 
 
 def contains_all(text: str, terms: list[str]) -> bool:

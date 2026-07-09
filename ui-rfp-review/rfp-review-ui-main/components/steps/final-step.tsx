@@ -14,8 +14,7 @@ export function FinalStep({
   response: ReviewResponse
   onReset: () => void
 }) {
-  const results = response.results ?? []
-  const displayItems = results
+  const displayItems = response.results ?? []
   const opinion = response.review_opinion
 
   return (
@@ -23,12 +22,12 @@ export function FinalStep({
       <StepHeader
         step={6}
         title="최종 결과"
-        description="HWP 표에 붙여넣기 쉽도록 구성한 최종 검토 결과입니다."
+        description="HWP 표에 붙여넣기 쉬운 형태로 정리한 최종 검토결과입니다."
       />
       <div className="mx-auto max-w-5xl px-8 py-6">
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           <p className="leading-relaxed">
-            <span className="font-medium text-foreground">전체 검토결과 복사</span>는 HWP 표의 법령준수 여부 열에 줄 단위로 붙여넣을 수 있습니다.
+            <span className="font-medium text-foreground">전체 검토결과 복사</span>는 법령준수여부 열에 붙여넣기 위한 값입니다.
           </p>
           <CopyButton label="전체 검토결과 복사" text={response.review_result_column_text} variant="secondary" />
         </div>
@@ -45,40 +44,34 @@ export function FinalStep({
               </tr>
             </thead>
             <tbody>
-              {displayItems.map((item) => {
-                const status = normalizeStatus(item)
-                return (
-                  <tr key={String(item.item_no)} className="border-b border-border align-top last:border-0">
-                    <td className="border-r border-border px-3 py-3 font-mono text-xs text-muted-foreground">
-                      {item.item_no}
-                    </td>
-                    <td className="border-r border-border px-3 py-3">
-                      <p className="font-medium text-foreground">{item.law_name || "법제도명 없음"}</p>
-                    </td>
-                    <td className="border-r border-border px-3 py-3">
-                      <StatusBadge status={status} />
-                    </td>
-                    <td className="border-r border-border px-3 py-3">
-                      {item.detailed_assessment ? (
-                        renderDetailedAssessment(item)
-                      ) : (
-                        <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
-                          {(item.compliance_content ?? "").trim() || "-"}
-                        </p>
+              {displayItems.map((item) => (
+                <tr key={String(item.item_no)} className="border-b border-border align-top last:border-0">
+                  <td className="border-r border-border px-3 py-3 font-mono text-xs text-muted-foreground">
+                    {item.item_no}
+                  </td>
+                  <td className="border-r border-border px-3 py-3">
+                    <p className="font-medium text-foreground">{item.law_name || "법제도명 없음"}</p>
+                  </td>
+                  <td className="border-r border-border px-3 py-3">
+                    <StatusBadge status={normalizeStatus(item)} />
+                  </td>
+                  <td className="border-r border-border px-3 py-3">
+                    {item.detailed_assessment && <DetailedAssessmentTable item={item} />}
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                      {(item.compliance_content ?? "").trim() || "-"}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-col gap-1.5">
+                      <CopyButton label="법령준수여부 복사" text={item.copy_texts?.review_result ?? item.normalized_result} />
+                      <CopyButton label="권고내용 복사" text={item.copy_texts?.compliance_content ?? item.compliance_content} />
+                      {item.detailed_assessment && (
+                        <CopyButton label="전체 명시 여부 복사" text={item.copy_texts?.internal_assessment ?? internalAssessmentCopyText(item)} />
                       )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1.5">
-                        <CopyButton label="법령준수 여부 복사" text={item.copy_texts?.review_result ?? item.normalized_result} />
-                        <CopyButton label="권고내용 복사" text={item.copy_texts?.compliance_content ?? item.compliance_content} />
-                        {item.detailed_assessment && (
-                          <CopyButton label="전체 명시 여부 복사" text={internalAssessmentCopyText(item)} />
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -88,12 +81,6 @@ export function FinalStep({
             <h3 className="text-sm font-semibold text-foreground">검토의견</h3>
             <CopyButton label="검토의견 복사" text={opinion?.copy_text} />
           </div>
-          {opinion && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              총 {opinion.total_count ?? displayItems.length}개 항목 중 {opinion.non_compliant_count ?? 0}개 항목 미준수 및{" "}
-              {opinion.needs_revision_count ?? 0}개 항목 보완 권고
-            </p>
-          )}
           <pre className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 font-sans text-sm leading-relaxed text-foreground">
             {opinion?.copy_text?.trim() || "검토의견이 없습니다."}
           </pre>
@@ -110,12 +97,11 @@ export function FinalStep({
   )
 }
 
-function renderDetailedAssessment(item: ReviewItem) {
+function DetailedAssessmentTable({ item }: { item: ReviewItem }) {
   const assessment = item.detailed_assessment
   if (!assessment) return null
-
   return (
-    <div>
+    <div className="overflow-hidden rounded-md border border-border">
       <table className="w-full table-fixed border-collapse text-xs">
         <thead>
           <tr className="bg-muted/60 text-muted-foreground">
@@ -137,7 +123,9 @@ function renderDetailedAssessment(item: ReviewItem) {
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-xs font-medium text-foreground">최종 판단: {assessment.final_result}</p>
+      <p className="border-t border-border px-2 py-1.5 text-xs font-medium text-foreground">
+        최종 판단: {assessment.final_result}
+      </p>
     </div>
   )
 }
@@ -145,14 +133,11 @@ function renderDetailedAssessment(item: ReviewItem) {
 function internalAssessmentCopyText(item: ReviewItem): string {
   const assessment = item.detailed_assessment
   if (!assessment) return ""
-  const lines = [
-    `${item.item_no}. ${item.law_name || assessment.title}`,
-    "",
-    "구분\t내용\t명시 여부",
-    ...assessment.rows.map((row) => `${row.no}\t${row.title}\n${row.content}\t${row.explicit_status}`),
-    "",
-    `최종 판단\t${assessment.final_result}`,
-  ]
+  const lines = [`${item.item_no}. ${item.law_name || assessment.title}`, "", "구분\t내용\t명시 여부"]
+  for (const row of assessment.rows) {
+    lines.push(`${row.no}\t${row.title}\n${row.content}\t${row.explicit_status}`)
+  }
+  lines.push("", `최종 판단\t${assessment.final_result}`)
   if (assessment.reason) lines.push(`판단 근거\t${assessment.reason}`)
   return lines.join("\n")
 }

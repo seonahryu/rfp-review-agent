@@ -5,7 +5,7 @@ import { CheckCircle2, ChevronLeft, ChevronRight, FileSearch, Loader2, Search, X
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import { StatusBadge, AttentionBadge } from "@/components/status-badge"
+import { AttentionBadge, StatusBadge } from "@/components/status-badge"
 import { searchDocument } from "@/lib/api-client"
 import { normalizeStatus, type ReviewItem, type SearchHit, type StatusKey } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -64,11 +64,7 @@ export function ItemDetailPanel({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">항목 상세</h3>
-            {total > 0 && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {position} / {total}
-              </p>
-            )}
+            {total > 0 && <p className="mt-0.5 text-xs text-muted-foreground">{position} / {total}</p>}
           </div>
           <div className="flex items-center gap-1">
             <Button type="button" variant="ghost" size="icon" onClick={onPrevious} disabled={position <= 1} aria-label="이전 항목">
@@ -87,7 +83,7 @@ export function ItemDetailPanel({
       <div className="flex-1 overflow-y-auto">
         {!item ? (
           <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-            좌측에서 항목을 선택하면 상세 정보가 표시됩니다.
+            왼쪽에서 항목을 선택하면 상세 정보가 표시됩니다.
           </div>
         ) : (
           <div className="px-5 py-4">
@@ -106,9 +102,7 @@ export function ItemDetailPanel({
             <DetailRow label="판단결과">{displayResult}</DetailRow>
             {confidencePct !== null && (
               <DetailRow label="신뢰도">
-                <span className={cn(confidencePct < 70 && "text-status-attention font-semibold")}>
-                  {confidencePct}%
-                </span>
+                <span className={cn(confidencePct < 70 && "font-semibold text-status-attention")}>{confidencePct}%</span>
               </DetailRow>
             )}
             {item.reason && <DetailRow label="사유">{item.reason}</DetailRow>}
@@ -160,16 +154,6 @@ export function ItemDetailPanel({
                 </ul>
               </div>
             )}
-
-            {item.verification != null && (
-              <DetailRow label="검증">
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
-                  {typeof item.verification === "string"
-                    ? item.verification
-                    : JSON.stringify(item.verification, null, 2)}
-                </pre>
-              </DetailRow>
-            )}
           </div>
         )}
 
@@ -180,16 +164,9 @@ export function ItemDetailPanel({
             <FileSearch className="size-4 text-primary" />
             <p className="text-sm font-semibold text-foreground">RFP 본문 검색</p>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            모델 판단의 근거가 실제 RFP 문서에 있는지 확인하세요.
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">판단 근거가 실제 RFP 문서에 있는지 확인할 수 있습니다.</p>
           <form onSubmit={runSearch} className="mt-3 flex gap-2">
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="RFP 본문에서 근거 문장 검색"
-              className="flex-1"
-            />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="RFP 본문에서 검색" className="flex-1" />
             <Button type="submit" size="icon" disabled={searching || !query.trim()}>
               {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               <span className="sr-only">검색</span>
