@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StepHeader } from "@/components/step-header"
-import { checkReview, parsePdf } from "@/lib/api-client"
+import { checkReview, parsePdfInBrowserChunks } from "@/lib/api-client"
 import type { ReviewResponse } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -20,6 +20,8 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState("")
+  const [pageCount, setPageCount] = useState(0)
+  const [parsedPages, setParsedPages] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function pickFile(f: File | null | undefined) {
@@ -29,6 +31,8 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
       return
     }
     setFile(f)
+    setPageCount(0)
+    setParsedPages(0)
   }
 
   async function handleSubmit() {
@@ -37,10 +41,20 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
       return
     }
     setLoading(true)
+    setPageCount(0)
+    setParsedPages(0)
     try {
-      setStatus("PDF를 파싱하고 있습니다.")
-      const parsed = await parsePdf(file)
-      setStatus("법제도 검토를 진행하고 있습니다.")
+      setStatus("PDF를 1쪽씩 나누어 병렬 파싱하고 있습니다.")
+      const parsed = await parsePdfInBrowserChunks(file, (progress) => {
+        setPageCount(progress.total)
+        setParsedPages(progress.completed)
+        if (progress.startedPage) {
+          setStatus(`${progress.startedPage}쪽 파싱 시작 (${progress.completed}/${progress.total}페이지 완료)`)
+        } else if (progress.currentPage) {
+          setStatus(`${progress.currentPage}쪽 처리 완료 (${progress.completed}/${progress.total}페이지 완료)`)
+        }
+      })
+      setStatus("파싱 결과를 기준으로 법제도 검토를 진행하고 있습니다.")
       const reviewed = await checkReview(String(parsed.document_id), items)
       toast.success("검토가 완료되었습니다.")
       onComplete({
@@ -58,6 +72,8 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
       setStatus("")
     }
   }
+
+  const progressPercent = pageCount > 0 ? Math.round((parsedPages / pageCount) * 100) : 0
 
   return (
     <div>
@@ -149,9 +165,19 @@ export function UploadStep({ onComplete }: { onComplete: (r: ReviewResponse) => 
             )}
           </Button>
           {loading && (
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-              {status || "문서 분량에 따라 시간이 걸릴 수 있습니다. 페이지를 닫지 마세요."}
-            </p>
+            <div className="mt-3">
+              {pageCount > 0 && (
+                <div className="mb-2 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              )}
+              <p className="text-center text-xs text-muted-foreground">
+                {status || "문서 분량에 따라 시간이 걸릴 수 있습니다. 페이지를 닫지 마세요."}
+              </p>
+            </div>
           )}
         </div>
       </div>
