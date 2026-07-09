@@ -17,7 +17,7 @@ for (const uiRoot of uiRoots) {
       `long-running endpoint ${endpoint} should try Render directly first`,
     )
   }
-  assert(apiClient.includes('fetch("/api/parse"'), "parse should keep a same-origin fallback")
+  assert(!apiClient.includes('fetch("/api/parse"'), "parse should not fall back to Vercel")
   assert(apiClient.includes('fetch("/api/review/check"'), "review check should keep a same-origin fallback")
 
   assert(
@@ -38,8 +38,8 @@ for (const uiRoot of uiRoots) {
     "recommendation proxy route should exist",
   )
   assert(
-    fs.existsSync(path.join(uiRoot, "app", "api", "parse", "route.ts")),
-    "parse fallback proxy route should exist",
+    !fs.existsSync(path.join(uiRoot, "app", "api", "parse", "route.ts")),
+    "parse fallback proxy route should be removed",
   )
   assert(
     fs.existsSync(path.join(uiRoot, "app", "api", "review", "check", "route.ts")),

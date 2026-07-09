@@ -160,6 +160,43 @@ class ParseRepairOrchestratorTests(unittest.TestCase):
 
         self.assertEqual(row_to_candidate(row).rfp_printed_page_no, 2)
 
+    def test_insert_page_strips_leading_printed_page_number_from_text(self):
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+
+        from agents.models import CandidatePage
+        from agents.gpt_parser_agent import ensure_parse_schema, insert_page
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "parse.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                ensure_parse_schema(conn)
+                conn.execute(
+                    """
+                    INSERT INTO rfp_document (document_name, file_path, total_pages, parse_status)
+                    VALUES ('sample.pdf', 'sample.pdf', 1, 'ok')
+                    """
+                )
+                insert_page(
+                    conn,
+                    1,
+                    CandidatePage(
+                        page_no=112,
+                        page_text="110\n별첨 1 소프트웨어 개발사업의 적정 사업기간",
+                        text_length=31,
+                        rfp_printed_page_no=110,
+                    ),
+                )
+                row = conn.execute("SELECT * FROM rfp_page WHERE document_id=1").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(row["rfp_printed_page_no"], 110)
+        self.assertEqual(row["page_text"], "별첨 1 소프트웨어 개발사업의 적정 사업기간")
+
     def test_jsonl_loader_parses_numeric_rfp_printed_page_no(self):
         import json
         import tempfile

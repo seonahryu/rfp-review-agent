@@ -111,6 +111,12 @@ class LargeParseAndInternalAssessmentTests(unittest.TestCase):
         self.assertEqual([page.page_no for page in pages], [1, 2])
         self.assertEqual([page.page_text for page in pages], ["첫 페이지", "둘째 페이지"])
 
+    def test_openai_api_key_placeholder_fails_with_clear_error(self):
+        from agents.gpt_parser_agent import validate_openai_api_key
+
+        with self.assertRaisesRegex(RuntimeError, "non-ASCII"):
+            validate_openai_api_key("여기에_실제_OpenAI_API_KEY")
+
     def test_review_for_ui_draws_item_5_internal_assessment_table(self):
         from agents.models import FinalReview, ReviewResult
         review_for_ui = self.import_review_for_ui()

@@ -86,11 +86,7 @@ class GptParserAgent:
             document_id = int(cur.lastrowid)
             pages: list[CandidatePage] = []
             for chunk in chunked(selected_pages, self.config.pages_per_call):
-                chunk_path = write_pdf_pages(reader, chunk)
-                try:
-                    extracted = self.extract_chunk(chunk_path, chunk)
-                finally:
-                    chunk_path.unlink(missing_ok=True)
+                extracted = self.extract_chunk_with_fallback(reader, chunk)
                 if not extracted:
                     raise RuntimeError(
                         f"GPT parser returned no pages for PDF page chunk {chunk}. "
@@ -219,6 +215,20 @@ class GptParserAgent:
                 )
             )
         return pages
+
+    def extract_chunk_with_fallback(self, reader: PdfReader, page_numbers: list[int]) -> list[CandidatePage]:
+        chunk_path = write_pdf_pages(reader, page_numbers)
+        try:
+            return self.extract_chunk(chunk_path, page_numbers)
+        except RuntimeError:
+            if len(page_numbers) <= 1:
+                raise
+            repaired_pages: list[CandidatePage] = []
+            for page_no in page_numbers:
+                repaired_pages.extend(self.extract_chunk_with_fallback(reader, [page_no]))
+            return repaired_pages
+        finally:
+            chunk_path.unlink(missing_ok=True)
 
 
 def normalized_chunk_page_no(
@@ -374,6 +384,8 @@ def ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, d
 
 
 def insert_page(conn: sqlite3.Connection, document_id: int, page: CandidatePage) -> None:
+    page_text = strip_leading_printed_page_number(page.page_text, page.rfp_printed_page_no)
+    text_length = len(page_text.replace(" ", "").replace("\n", ""))
     conn.execute(
         """
         INSERT INTO rfp_page (
@@ -387,8 +399,8 @@ def insert_page(conn: sqlite3.Connection, document_id: int, page: CandidatePage)
         (
             document_id,
             page.page_no,
-            page.page_text,
-            page.text_length,
+            page_text,
+            text_length,
             page.rfp_printed_page_no,
             int(page.has_table_candidate),
             int(page.has_attachment_candidate),
@@ -399,6 +411,14 @@ def insert_page(conn: sqlite3.Connection, document_id: int, page: CandidatePage)
             page.parser_warning,
         ),
     )
+
+
+def strip_leading_printed_page_number(text: str, printed_page_no: int | None) -> str:
+    source = str(text or "")
+    if printed_page_no is None:
+        return source
+    pattern = rf"^\s*[-–—]?\s*{re.escape(str(printed_page_no))}\s*[-–—]?\s*(?:\r?\n)+"
+    return re.sub(pattern, "", source, count=1).lstrip()
 
 
 def row_to_candidate(row: sqlite3.Row) -> CandidatePage:
@@ -493,6 +513,7 @@ def post_json(
     timeout_seconds: int,
     max_retries: int = 2,
 ) -> dict[str, Any]:
+    validate_openai_api_key(api_key)
     request = urllib.request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -521,6 +542,21 @@ def post_json(
                 ) from exc
             time.sleep(2**attempt)
     raise RuntimeError("OpenAI API call failed unexpectedly.")
+
+
+def validate_openai_api_key(api_key: str) -> None:
+    key = str(api_key or "").strip()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is empty. Set it to your actual OpenAI API key.")
+    try:
+        key.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise RuntimeError(
+            "OPENAI_API_KEY contains non-ASCII characters. "
+            "Use your actual OpenAI API key, not a Korean placeholder string."
+        ) from exc
+    if not key.startswith("sk-"):
+        raise RuntimeError("OPENAI_API_KEY does not look like an OpenAI API key.")
 
 
 def retry_after_seconds(exc: urllib.error.HTTPError, attempt: int) -> float:

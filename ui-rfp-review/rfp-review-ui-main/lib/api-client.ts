@@ -17,28 +17,17 @@ function parseNetworkError(err: unknown, fallbackMessage: string): Error {
 }
 
 export async function parsePdf(file: File): Promise<ReviewResponse> {
-  const makeForm = () => {
-    const form = new FormData()
-    form.append("file", file)
-    return form
-  }
+  const form = new FormData()
+  form.append("file", file)
 
   try {
     const res = await fetch(`${BACKEND_API_URL}/api/parse`, {
       method: "POST",
-      body: makeForm(),
+      body: form,
     })
     return parseJsonResponse<ReviewResponse>(res, "PDF 파싱 요청에 실패했습니다.")
   } catch (err) {
-    try {
-      const fallback = await fetch("/api/parse", {
-        method: "POST",
-        body: makeForm(),
-      })
-      return parseJsonResponse<ReviewResponse>(fallback, "PDF 파싱 요청에 실패했습니다.")
-    } catch (fallbackErr) {
-      throw parseNetworkError(fallbackErr || err, "PDF 파싱 요청에 실패했습니다.")
-    }
+    throw parseNetworkError(err, "PDF 파싱 요청에 실패했습니다.")
   }
 }
 
