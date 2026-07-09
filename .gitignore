@@ -12,10 +12,12 @@ __pycache__/
 .ruff_cache/
 
 node_modules/
+.pnpm-store/
 dist/
 build/
 .next/
 .vercel/
+tsconfig.tsbuildinfo
 
 .agents/
 .codex/
