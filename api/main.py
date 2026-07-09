@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from agents.internal_assessment import build_internal_assessment
 from agents.models import ComplianceContent, FinalReview, ReviewResult
-from agents.gpt_parser_agent import GptParserAgent
+from agents.gpt_parser_agent import GptParserAgent, GptParserConfig
 from agents.parse_bundle import candidate_page_to_dict, import_pages_to_db, import_parse_bundle_to_db
 from agents.parse_job_orchestrator import ParseJobRunner
 from orchestrator import (
@@ -37,6 +38,8 @@ class JSONResponse(BaseJSONResponse):
 
 app = FastAPI(title="RFP Legal Review API", default_response_class=JSONResponse)
 LOW_CONFIDENCE_THRESHOLD = float(os.getenv("RFP_LOW_CONFIDENCE_THRESHOLD", "0.75"))
+CHUNK_PARSE_TIMEOUT_SECONDS = int(os.getenv("OPENAI_PDF_CHUNK_TIMEOUT_SECONDS", "90"))
+CHUNK_PARSE_MAX_RETRIES = int(os.getenv("OPENAI_PDF_CHUNK_MAX_RETRIES", "0"))
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -973,9 +976,25 @@ async def parse_pdf_chunk(
 ):
     selected_pages = parse_worker_page_numbers(page_numbers)
     chunk_path = await save_temp_upload(file, "chunk.pdf")
+    started_at = time.monotonic()
+    print(
+        f"[parse/chunk] start pages={selected_pages} file={file.filename} "
+        f"timeout={CHUNK_PARSE_TIMEOUT_SECONDS}s retries={CHUNK_PARSE_MAX_RETRIES}",
+        flush=True,
+    )
     try:
-        parser = GptParserAgent(default_db_path())
+        parser = GptParserAgent(
+            default_db_path(),
+            config=GptParserConfig(
+                model=os.getenv("OPENAI_PDF_CHUNK_MODEL", os.getenv("OPENAI_PDF_MODEL", "gpt-4.1")),
+                pages_per_call=1,
+                timeout_seconds=CHUNK_PARSE_TIMEOUT_SECONDS,
+                max_retries=CHUNK_PARSE_MAX_RETRIES,
+            ),
+        )
         pages = await run_in_threadpool(parser.extract_chunk, chunk_path, selected_pages)
+        elapsed = time.monotonic() - started_at
+        print(f"[parse/chunk] done pages={selected_pages} elapsed={elapsed:.1f}s", flush=True)
         by_page = {page.page_no: page for page in pages}
         missing_pages = [page_no for page_no in selected_pages if page_no not in by_page]
         if missing_pages:
@@ -989,6 +1008,10 @@ async def parse_pdf_chunk(
                 "pages": [candidate_page_to_dict(by_page[page_no]) for page_no in selected_pages],
             }
         )
+    except RuntimeError as exc:
+        elapsed = time.monotonic() - started_at
+        print(f"[parse/chunk] failed pages={selected_pages} elapsed={elapsed:.1f}s error={exc}", flush=True)
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     finally:
         chunk_path.unlink(missing_ok=True)
 
