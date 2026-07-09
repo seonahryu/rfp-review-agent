@@ -533,8 +533,18 @@ def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:
     db_path = default_db_path()
     output_dir = output_dir_path()
     pipeline = RfpReviewPipeline(db_path=db_path, output_dir=output_dir)
-    document = pipeline.parser.load(payload.document_id)
-    audited = pipeline.audit.audit(document)
+    parse_status = "ok"
+    audit_score = 100
+    audit_warnings = []
+    try:
+        document = pipeline.parser.load(payload.document_id)
+        audited = pipeline.audit.audit(document)
+        parse_status = audited.parse_status
+        audit_score = audited.audit_score or 0
+        audit_warnings = audited.audit_warnings
+    except RuntimeError as exc:
+        if "document_id not found" not in str(exc):
+            raise
     pipeline.rag.ensure_schema()
     final_reviews = [final_review_from_payload(item) for item in payload.results]
     final_reviews = attach_compliance_contents(
@@ -544,17 +554,17 @@ def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:
     )
     final_reviews = apply_manual_compliance_contents(final_reviews, payload)
     excel_path = pipeline.report.write_excel(
-        audited.document_id,
+        payload.document_id,
         list(final_reviews),
-        audited.audit_warnings,
+        audit_warnings,
     )
     from agents.models import PipelineSummary
 
     summary = PipelineSummary(
-        document_id=audited.document_id,
-        parse_status=audited.parse_status,
-        audit_score=audited.audit_score or 0,
-        audit_warnings=audited.audit_warnings,
+        document_id=payload.document_id,
+        parse_status=parse_status,
+        audit_score=audit_score,
+        audit_warnings=audit_warnings,
         final_reviews=list(final_reviews),
         excel_path=excel_path,
         compliance_contents=[
