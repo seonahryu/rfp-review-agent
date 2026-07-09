@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
+import json
 import os
 import re
 import sqlite3
@@ -9,13 +10,15 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.internal_assessment import build_internal_assessment
 from agents.models import ComplianceContent, FinalReview, ReviewResult
+from agents.gpt_parser_agent import GptParserAgent
+from agents.parse_bundle import candidate_page_to_dict, import_parse_bundle_to_db
 from agents.parse_job_orchestrator import ParseJobRunner
 from orchestrator import (
     DEFAULT_ITEM_NOS,
@@ -540,6 +543,37 @@ async def parse_uploaded_file(file: UploadFile):
         pdf_path.unlink(missing_ok=True)
 
 
+async def save_temp_upload(file: UploadFile, default_name: str) -> Path:
+    suffix = Path(file.filename or default_name).suffix or Path(default_name).suffix
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+        upload_path = Path(handle.name)
+        handle.write(await file.read())
+    return upload_path
+
+
+def parse_worker_page_numbers(value: str) -> list[int]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="page_numbers must be a JSON array") from exc
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=400, detail="page_numbers must be a JSON array")
+    page_numbers: list[int] = []
+    for item in parsed:
+        if isinstance(item, bool):
+            raise HTTPException(status_code=400, detail="page_numbers must contain integers")
+        try:
+            page_no = int(item)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="page_numbers must contain integers") from exc
+        if page_no <= 0:
+            raise HTTPException(status_code=400, detail="page_numbers must be positive")
+        page_numbers.append(page_no)
+    if not page_numbers:
+        raise HTTPException(status_code=400, detail="page_numbers cannot be empty")
+    return page_numbers
+
+
 async def save_upload_for_parse_job(file: UploadFile) -> Path:
     suffix = Path(file.filename or "rfp.pdf").suffix or ".pdf"
     upload_dir = output_dir_path() / "parse_uploads"
@@ -895,6 +929,55 @@ async def review_json(
 async def parse_pdf(file: UploadFile = File(...)):
     _, document = await parse_uploaded_file(file)
     return JSONResponse(parsed_document_response(document))
+
+
+@app.get("/api/worker/health")
+def worker_health() -> dict[str, Any]:
+    parser = GptParserAgent(default_db_path())
+    return {
+        "status": "ok",
+        "openai_configured": parser.is_configured(),
+        "chunk_proxy": True,
+    }
+
+
+@app.post("/api/parse/chunk")
+async def parse_pdf_chunk(
+    file: UploadFile = File(...),
+    page_numbers: str = Form(...),
+):
+    selected_pages = parse_worker_page_numbers(page_numbers)
+    chunk_path = await save_temp_upload(file, "chunk.pdf")
+    try:
+        parser = GptParserAgent(default_db_path())
+        pages = parser.extract_chunk(chunk_path, selected_pages)
+        by_page = {page.page_no: page for page in pages}
+        missing_pages = [page_no for page_no in selected_pages if page_no not in by_page]
+        if missing_pages:
+            raise HTTPException(
+                status_code=502,
+                detail=f"GPT parser returned no page result for PDF pages: {missing_pages}",
+            )
+        return JSONResponse(
+            {
+                "page_numbers": selected_pages,
+                "pages": [candidate_page_to_dict(by_page[page_no]) for page_no in selected_pages],
+            }
+        )
+    finally:
+        chunk_path.unlink(missing_ok=True)
+
+
+@app.post("/api/parse/import")
+async def import_parse_bundle(file: UploadFile = File(...)):
+    bundle_path = await save_temp_upload(file, "parse_bundle.zip")
+    try:
+        document = import_parse_bundle_to_db(bundle_path, default_db_path())
+        pipeline = RfpReviewPipeline(db_path=default_db_path(), output_dir=output_dir_path())
+        audited = pipeline.audit.audit(document)
+        return JSONResponse(parsed_document_response(audited))
+    finally:
+        bundle_path.unlink(missing_ok=True)
 
 
 @app.post("/api/parse/jobs")
