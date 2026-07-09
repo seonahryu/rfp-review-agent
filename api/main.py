@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse as BaseJSONResponse
 from pydantic import BaseModel, Field
 
 from agents.internal_assessment import build_internal_assessment
@@ -30,7 +30,11 @@ from orchestrator import (
 )
 
 
-app = FastAPI(title="RFP Legal Review API")
+class JSONResponse(BaseJSONResponse):
+    media_type = "application/json; charset=utf-8"
+
+
+app = FastAPI(title="RFP Legal Review API", default_response_class=JSONResponse)
 LOW_CONFIDENCE_THRESHOLD = float(os.getenv("RFP_LOW_CONFIDENCE_THRESHOLD", "0.75"))
 ALLOWED_ORIGINS = [
     origin.strip()
