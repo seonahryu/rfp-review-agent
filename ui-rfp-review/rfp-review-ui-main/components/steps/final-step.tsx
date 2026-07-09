@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { StepHeader } from "@/components/step-header"
 import { StatusBadge } from "@/components/status-badge"
 import { CopyButton } from "@/components/copy-button"
-import { normalizeStatus, type ReviewResponse } from "@/lib/types"
+import { normalizeStatus, type ReviewItem, type ReviewResponse } from "@/lib/types"
 
 export function FinalStep({
   response,
@@ -59,14 +59,21 @@ export function FinalStep({
                       <StatusBadge status={status} />
                     </td>
                     <td className="border-r border-border px-3 py-3">
-                      <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
-                        {(item.compliance_content ?? "").trim() || "-"}
-                      </p>
+                      {item.detailed_assessment ? (
+                        renderDetailedAssessment(item)
+                      ) : (
+                        <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                          {(item.compliance_content ?? "").trim() || "-"}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-1.5">
                         <CopyButton label="법령준수 여부 복사" text={item.copy_texts?.review_result ?? item.normalized_result} />
                         <CopyButton label="권고내용 복사" text={item.copy_texts?.compliance_content ?? item.compliance_content} />
+                        {item.detailed_assessment && (
+                          <CopyButton label="전체 명시 여부 복사" text={internalAssessmentCopyText(item)} />
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -101,4 +108,51 @@ export function FinalStep({
       </div>
     </div>
   )
+}
+
+function renderDetailedAssessment(item: ReviewItem) {
+  const assessment = item.detailed_assessment
+  if (!assessment) return null
+
+  return (
+    <div>
+      <table className="w-full table-fixed border-collapse text-xs">
+        <thead>
+          <tr className="bg-muted/60 text-muted-foreground">
+            <th className="w-12 border border-border px-2 py-1.5 font-medium">구분</th>
+            <th className="border border-border px-2 py-1.5 font-medium">내용</th>
+            <th className="w-20 border border-border px-2 py-1.5 font-medium">명시 여부</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assessment.rows.map((row) => (
+            <tr key={row.no} className="align-top">
+              <td className="border border-border px-2 py-1.5 text-center font-mono text-muted-foreground">{row.no}</td>
+              <td className="border border-border px-2 py-1.5 text-foreground">
+                <p className="font-medium">{row.title}</p>
+                <p className="mt-1 leading-relaxed text-muted-foreground">{row.content}</p>
+              </td>
+              <td className="border border-border px-2 py-1.5 text-center font-semibold text-foreground">{row.explicit_status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs font-medium text-foreground">최종 판단: {assessment.final_result}</p>
+    </div>
+  )
+}
+
+function internalAssessmentCopyText(item: ReviewItem): string {
+  const assessment = item.detailed_assessment
+  if (!assessment) return ""
+  const lines = [
+    `${item.item_no}. ${item.law_name || assessment.title}`,
+    "",
+    "구분\t내용\t명시 여부",
+    ...assessment.rows.map((row) => `${row.no}\t${row.title}\n${row.content}\t${row.explicit_status}`),
+    "",
+    `최종 판단\t${assessment.final_result}`,
+  ]
+  if (assessment.reason) lines.push(`판단 근거\t${assessment.reason}`)
+  return lines.join("\n")
 }

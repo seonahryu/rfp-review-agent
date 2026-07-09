@@ -9,6 +9,24 @@ export type CopyTexts = {
   [key: string]: string | undefined
 }
 
+export type DetailedAssessmentRow = {
+  no: string
+  title: string
+  content: string
+  explicit_status: string
+  matched_requirements?: string[]
+  evidence_pairs?: EvidencePair[]
+}
+
+export type DetailedAssessment = {
+  item_no: string
+  title: string
+  columns: string[]
+  rows: DetailedAssessmentRow[]
+  final_result: string
+  reason?: string
+}
+
 export type ReviewItem = {
   item_no: number | string
   law_name?: string | null
@@ -27,6 +45,7 @@ export type ReviewItem = {
   warnings?: string[]
   verification?: unknown
   compliance_content?: string
+  detailed_assessment?: DetailedAssessment | null
   needs_user_attention?: boolean
   user_action_required?: boolean
   attention_reasons?: string[]

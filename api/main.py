@@ -8,12 +8,14 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from agents.internal_assessment import build_internal_assessment
 from agents.models import ComplianceContent, FinalReview, ReviewResult
+from agents.parse_job_orchestrator import ParseJobRunner
 from orchestrator import (
     DEFAULT_ITEM_NOS,
     RfpReviewPipeline,
@@ -256,7 +258,16 @@ def review_result_column_text(results: list[dict[str, Any]]) -> str:
 def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str, Any]:
     compliance = review.compliance_content
     verification = review.verification_audit
-    normalized_result = normalize_result_label(review.final_result)
+    detailed_assessment = build_internal_assessment(
+        str(review.item_no),
+        list(review.evidence_pages),
+        list(review.evidence_text),
+    )
+    normalized_result = (
+        detailed_assessment["final_result"]
+        if detailed_assessment is not None
+        else normalize_result_label(review.final_result)
+    )
     compliance_text = compliance.compliance_content if compliance is not None else ""
     criteria = item_criteria.get(str(review.item_no), {})
     return {
@@ -264,7 +275,7 @@ def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str,
         "law_name": criteria.get("title"),
         "target_text": criteria.get("target_text", ""),
         "requirement_texts": criteria.get("requirement_texts", []),
-        "review_result": review.final_result,
+        "review_result": normalized_result if detailed_assessment is not None else review.final_result,
         "normalized_result": normalized_result,
         "final_status": review.final_status,
         "is_target": review.is_target,
@@ -278,6 +289,7 @@ def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str,
         "verification": asdict(verification) if verification is not None else None,
         "compliance_content": compliance_text,
         "compliance": asdict(compliance) if compliance is not None else None,
+        "detailed_assessment": detailed_assessment,
         "needs_user_attention": needs_user_attention(review),
         "user_action_required": needs_user_attention(review),
         "attention_reasons": attention_reasons(review),
@@ -354,6 +366,32 @@ async def parse_uploaded_file(file: UploadFile):
         return pipeline, audited
     finally:
         pdf_path.unlink(missing_ok=True)
+
+
+async def save_upload_for_parse_job(file: UploadFile) -> Path:
+    suffix = Path(file.filename or "rfp.pdf").suffix or ".pdf"
+    upload_dir = output_dir_path() / "parse_uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target_path = upload_dir / f"{os.urandom(8).hex()}{suffix}"
+    target_path.write_bytes(await file.read())
+    return target_path
+
+
+def run_parse_job_background(job_id: str) -> None:
+    runner = ParseJobRunner(default_db_path())
+    runner.run_job(job_id)
+
+
+def parse_job_response(job_id: str) -> dict[str, Any]:
+    db_path = default_db_path()
+    runner = ParseJobRunner(db_path)
+    snapshot = runner.snapshot(job_id).to_dict()
+    if snapshot["status"] == "succeeded":
+        pipeline = RfpReviewPipeline(db_path=db_path, output_dir=output_dir_path())
+        document = pipeline.parser.load(snapshot["document_id"])
+        audited = pipeline.audit.audit(document)
+        snapshot["document"] = parsed_document_response(audited)
+    return snapshot
 
 
 def parsed_document_response(document) -> dict[str, Any]:
@@ -585,6 +623,20 @@ async def review_json(
 async def parse_pdf(file: UploadFile = File(...)):
     _, document = await parse_uploaded_file(file)
     return JSONResponse(parsed_document_response(document))
+
+
+@app.post("/api/parse/jobs")
+async def create_parse_job(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    pdf_path = await save_upload_for_parse_job(file)
+    runner = ParseJobRunner(default_db_path())
+    snapshot = runner.create_job(pdf_path)
+    background_tasks.add_task(run_parse_job_background, snapshot.job_id)
+    return JSONResponse(snapshot.to_dict())
+
+
+@app.get("/api/parse/jobs/{job_id}")
+async def get_parse_job(job_id: str):
+    return JSONResponse(parse_job_response(job_id))
 
 
 @app.post("/api/review/check")

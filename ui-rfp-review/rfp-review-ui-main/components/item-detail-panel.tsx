@@ -125,6 +125,7 @@ export function ItemDetailPanel({
                 </ul>
               </div>
             )}
+            {item.detailed_assessment && <DetailedAssessmentTable item={item} />}
             {item.recommendation && <DetailRow label="참고 권고">{item.recommendation}</DetailRow>}
             {item.compliance_content && <DetailRow label="권고내용">{item.compliance_content}</DetailRow>}
 
@@ -248,6 +249,46 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 
   if (cursor < text.length) parts.push(text.slice(cursor))
   return <>{parts}</>
+}
+
+function DetailedAssessmentTable({ item }: { item: ReviewItem }) {
+  const assessment = item.detailed_assessment
+  if (!assessment) return null
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-muted-foreground">내부 검토표</p>
+        <span className="rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs font-semibold text-foreground">
+          {assessment.final_result}
+        </span>
+      </div>
+      <div className="mt-2 overflow-hidden rounded-md border border-border">
+        <table className="w-full table-fixed border-collapse text-left text-xs">
+          <thead className="bg-muted/70 text-muted-foreground">
+            <tr>
+              <th className="w-10 border-b border-border px-2 py-2 font-medium">구분</th>
+              <th className="border-b border-border px-2 py-2 font-medium">내용</th>
+              <th className="w-16 border-b border-border px-2 py-2 font-medium">명시 여부</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assessment.rows.map((row) => (
+              <tr key={row.no} className="align-top">
+                <td className="border-t border-border px-2 py-2 font-mono text-muted-foreground">{row.no}</td>
+                <td className="border-t border-border px-2 py-2 text-foreground">
+                  <div className="font-medium">{row.title}</div>
+                  <div className="mt-1 leading-relaxed text-muted-foreground">{row.content}</div>
+                </td>
+                <td className="border-t border-border px-2 py-2 font-semibold text-foreground">{row.explicit_status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {assessment.reason && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{assessment.reason}</p>}
+    </div>
+  )
 }
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
