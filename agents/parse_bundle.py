@@ -89,10 +89,26 @@ def load_parse_bundle(bundle_path: Path) -> tuple[dict[str, Any], list[Candidate
 
 def import_parse_bundle_to_db(bundle_path: Path, db_path: Path | str) -> ParsedDocument:
     meta, pages = load_parse_bundle(bundle_path)
+    return import_pages_to_db(
+        db_path,
+        document_name=str(meta.get("document_name") or bundle_path.stem),
+        total_pages=int(meta.get("total_pages") or max(page.page_no for page in pages)),
+        pages_data=[candidate_page_to_dict(page) for page in pages],
+        file_path=str(bundle_path),
+    )
+
+
+def import_pages_to_db(
+    db_path: Path | str,
+    *,
+    document_name: str,
+    total_pages: int,
+    pages_data: list[dict[str, Any]],
+    file_path: str | None = None,
+) -> ParsedDocument:
+    pages = [candidate_page_from_dict(data) for data in pages_data]
     pages = fill_missing_rfp_printed_page_numbers(sorted(pages, key=lambda page: page.page_no))
     infer_table_candidates(pages)
-    document_name = str(meta.get("document_name") or bundle_path.stem)
-    total_pages = int(meta.get("total_pages") or max(page.page_no for page in pages))
     warning_count = sum(1 for page in pages if page.parser_warning)
     parse_status = "warning" if warning_count else "ok"
 
@@ -105,7 +121,7 @@ def import_parse_bundle_to_db(bundle_path: Path, db_path: Path | str) -> ParsedD
             INSERT INTO rfp_document (document_name, file_path, total_pages, parse_status, parse_warning_count)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (document_name, str(bundle_path), total_pages, parse_status, warning_count),
+            (document_name, file_path, total_pages, parse_status, warning_count),
         )
         document_id = int(cur.lastrowid)
         for page in pages:

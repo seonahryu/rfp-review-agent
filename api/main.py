@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse as BaseJSONResponse
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 from agents.internal_assessment import build_internal_assessment
 from agents.models import ComplianceContent, FinalReview, ReviewResult
 from agents.gpt_parser_agent import GptParserAgent
-from agents.parse_bundle import candidate_page_to_dict, import_parse_bundle_to_db
+from agents.parse_bundle import candidate_page_to_dict, import_pages_to_db, import_parse_bundle_to_db
 from agents.parse_job_orchestrator import ParseJobRunner
 from orchestrator import (
     DEFAULT_ITEM_NOS,
@@ -99,6 +100,26 @@ class RecommendationReviewInput(BaseModel):
 class RecommendationRequest(BaseModel):
     document_id: int
     results: list[RecommendationReviewInput]
+
+
+class ParsedPageInput(BaseModel):
+    page_no: int
+    page_text: str = ""
+    text_length: int | None = None
+    rfp_printed_page_no: int | None = None
+    has_table_candidate: bool = False
+    has_attachment_candidate: bool = False
+    has_eval_table_candidate: bool = False
+    has_toc_candidate: bool = False
+    has_blind_candidate: bool = False
+    has_commercial_sw_candidate: bool = False
+    parser_warning: str | None = None
+
+
+class ImportPagesRequest(BaseModel):
+    document_name: str
+    total_pages: int
+    pages: list[ParsedPageInput]
 
 
 def default_db_path() -> Path:
@@ -954,7 +975,7 @@ async def parse_pdf_chunk(
     chunk_path = await save_temp_upload(file, "chunk.pdf")
     try:
         parser = GptParserAgent(default_db_path())
-        pages = parser.extract_chunk(chunk_path, selected_pages)
+        pages = await run_in_threadpool(parser.extract_chunk, chunk_path, selected_pages)
         by_page = {page.page_no: page for page in pages}
         missing_pages = [page_no for page_no in selected_pages if page_no not in by_page]
         if missing_pages:
@@ -982,6 +1003,22 @@ async def import_parse_bundle(file: UploadFile = File(...)):
         return JSONResponse(parsed_document_response(audited))
     finally:
         bundle_path.unlink(missing_ok=True)
+
+
+@app.post("/api/parse/import-pages")
+async def import_parsed_pages(payload: ImportPagesRequest):
+    if not payload.pages:
+        raise HTTPException(status_code=400, detail="pages cannot be empty")
+    document = import_pages_to_db(
+        default_db_path(),
+        document_name=payload.document_name,
+        total_pages=payload.total_pages,
+        pages_data=[page.model_dump() for page in payload.pages],
+        file_path=None,
+    )
+    pipeline = RfpReviewPipeline(db_path=default_db_path(), output_dir=output_dir_path())
+    audited = pipeline.audit.audit(document)
+    return JSONResponse(parsed_document_response(audited))
 
 
 @app.post("/api/parse/jobs")
