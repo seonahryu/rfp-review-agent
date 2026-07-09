@@ -1,13 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { CheckCircle2, ChevronDown, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { StatusBadge, AttentionBadge } from "@/components/status-badge"
+import { AttentionBadge, StatusBadge } from "@/components/status-badge"
+import {
+  INTERNAL_STATUS_OPTIONS,
+} from "@/lib/internal-assessment"
 import {
   attentionReasonText,
+  type InternalAssessmentOverrides,
   normalizeStatus,
   STATUS_LABEL,
   type ReviewItem,
@@ -17,10 +21,10 @@ import {
 import { cn } from "@/lib/utils"
 
 const RESULT_OPTIONS = [
-  { value: "준수", className: "border-status-compliant/40 text-status-compliant bg-status-compliant-bg" },
-  { value: "미준수", className: "border-status-noncompliant/40 text-status-noncompliant bg-status-noncompliant-bg" },
-  { value: "보완필요", className: "border-status-revision/40 text-status-revision bg-status-revision-bg" },
-  { value: "해당없음", className: "border-status-na/40 text-status-na bg-status-na-bg" },
+  { value: "준수", className: "border-status-compliant/40 bg-status-compliant-bg text-status-compliant" },
+  { value: "미준수", className: "border-status-noncompliant/40 bg-status-noncompliant-bg text-status-noncompliant" },
+  { value: "보완필요", className: "border-status-revision/40 bg-status-revision-bg text-status-revision" },
+  { value: "해당없음", className: "border-status-na/40 bg-status-na-bg text-status-na" },
 ] as const
 
 export function ResultItemCard({
@@ -42,21 +46,35 @@ export function ResultItemCard({
 }) {
   const [open, setOpen] = useState(false)
   const [manualContent, setManualContent] = useState(feedback?.manual_compliance_content ?? "")
-  const attention = item.user_action_required || item.needs_user_attention
   const status = normalizeStatus(item)
   const initialResult = status === "unknown" ? "" : STATUS_LABEL[status]
   const [correctedResult, setCorrectedResult] = useState(feedback?.corrected_result ?? initialResult)
+  const [internalOverrides, setInternalOverrides] = useState<InternalAssessmentOverrides>(
+    feedback?.internal_assessment_overrides ?? {},
+  )
+  const attention = item.user_action_required || item.needs_user_attention
   const displayStatus = statusFromResult(correctedResult) ?? status
   const confidencePct =
     typeof item.confidence === "number"
       ? Math.round(item.confidence <= 1 ? item.confidence * 100 : item.confidence)
       : null
+  const displayAssessment = useMemo(() => {
+    if (!item.detailed_assessment) return null
+    return {
+      ...item.detailed_assessment,
+      rows: item.detailed_assessment.rows.map((row) => ({
+        ...row,
+        explicit_status: internalOverrides[row.no] ?? row.explicit_status,
+      })),
+    }
+  }, [item.detailed_assessment, internalOverrides])
 
   function handleConfirm() {
     onConfirm({
       status: "submitted",
       corrected_result: correctedResult,
       manual_compliance_content: manualContent.trim(),
+      internal_assessment_overrides: internalOverrides,
       resolved: true,
     })
     setOpen(false)
@@ -129,8 +147,18 @@ export function ResultItemCard({
         </button>
       </div>
 
+      {displayAssessment && <InternalAssessmentTable assessment={displayAssessment} compact />}
+
       {open && (
         <div className="border-t border-border p-4" onClick={(e) => e.stopPropagation()}>
+          {displayAssessment && (
+            <EditableInternalAssessmentTable
+              assessment={displayAssessment}
+              overrides={internalOverrides}
+              onChange={(rowNo, status) => setInternalOverrides((prev) => ({ ...prev, [rowNo]: status }))}
+            />
+          )}
+
           {item.recommendation && (
             <div className="mb-4 rounded-md bg-muted/50 p-3">
               <p className="text-xs font-medium text-muted-foreground">참고 권고</p>
@@ -170,14 +198,10 @@ export function ResultItemCard({
           <p className="mt-0.5 text-xs text-muted-foreground">
             입력하면 권고 문장 생성 단계에서 자동 생성 권고내용보다 우선 반영됩니다.
           </p>
-          <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-            <p>준수: 제안요청서 p._ 명시</p>
-            <p>해당없음: 해당없음</p>
-          </div>
           <Textarea
             value={manualContent}
             onChange={(e) => setManualContent(e.target.value)}
-            placeholder="예: 제안요청서에 해당 법제도 준수 항목을 명시하시기 바랍니다."
+            placeholder="예: 제안요청서에 해당 항목을 명시하시기 바랍니다."
             className="mt-2 min-h-20"
           />
 
@@ -193,6 +217,89 @@ export function ResultItemCard({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function InternalAssessmentTable({
+  assessment,
+  compact,
+}: {
+  assessment: NonNullable<ReviewItem["detailed_assessment"]>
+  compact?: boolean
+}) {
+  return (
+    <div className={cn("overflow-hidden border-t border-border", !compact && "mt-3 rounded-md border")}>
+      <table className="w-full table-fixed border-collapse text-xs">
+        <thead className="bg-muted/70 text-muted-foreground">
+          <tr>
+            <th className="w-12 border border-border px-2 py-1.5 font-medium">구분</th>
+            <th className="border border-border px-2 py-1.5 font-medium">내용</th>
+            <th className="w-20 border border-border px-2 py-1.5 font-medium">명시 여부</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assessment.rows.map((row) => (
+            <tr key={row.no} className="align-top">
+              <td className="border border-border px-2 py-1.5 text-center font-mono text-muted-foreground">{row.no}</td>
+              <td className="border border-border px-2 py-1.5 text-foreground">
+                <p className="font-medium">{row.title}</p>
+                <p className="mt-1 leading-relaxed text-muted-foreground">{row.content}</p>
+              </td>
+              <td className="border border-border px-2 py-1.5 text-center font-semibold text-foreground">{row.explicit_status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="border-t border-border px-2 py-1.5 text-xs font-medium text-foreground">
+        최종 판단: {assessment.final_result}
+      </p>
+    </div>
+  )
+}
+
+function EditableInternalAssessmentTable({
+  assessment,
+  overrides,
+  onChange,
+}: {
+  assessment: NonNullable<ReviewItem["detailed_assessment"]>
+  overrides: InternalAssessmentOverrides
+  onChange: (rowNo: string, status: InternalAssessmentOverrides[string]) => void
+}) {
+  return (
+    <div className="mb-4 rounded-md border border-border bg-muted/20 p-3">
+      <p className="text-sm font-medium text-foreground">내부표 명시 여부 수정</p>
+      <div className="mt-3 space-y-3">
+        {assessment.rows.map((row) => {
+          const current = overrides[row.no] ?? row.explicit_status
+          return (
+            <div key={row.no} className="rounded-md border border-border bg-card p-3">
+              <p className="text-xs font-medium text-foreground">
+                {row.no}. {row.title}
+              </p>
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {INTERNAL_STATUS_OPTIONS.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    aria-pressed={current === status}
+                    onClick={() => onChange(row.no, status)}
+                    className={cn(
+                      "h-8 rounded-md border px-2 text-xs font-medium transition-colors",
+                      current === status
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

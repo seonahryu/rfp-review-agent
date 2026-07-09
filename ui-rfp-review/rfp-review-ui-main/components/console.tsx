@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 import type { ReviewItem, ReviewResponse, UserFeedback } from "@/lib/types"
 import { generateRecommendations } from "@/lib/api-client"
+import { applyFeedbackToItems } from "@/lib/internal-assessment"
 import { type StepKey, stepIndexOf } from "@/lib/steps"
 import { StepSidebar } from "@/components/step-sidebar"
 import { UploadStep } from "@/components/steps/upload-step"
@@ -27,13 +28,17 @@ export function Console() {
   const [detailPanelOpen, setDetailPanelOpen] = useState(true)
   const [generatingRecommendations, setGeneratingRecommendations] = useState(false)
 
-  const results = response?.results ?? []
+  const results = useMemo(
+    () => applyFeedbackToItems(response?.results ?? [], feedback),
+    [response, feedback],
+  )
+  const effectiveResponse = response ? { ...response, results } : null
   const allConfirmed = useMemo(
     () => results.length > 0 && results.every((r) => confirmedItems[itemKey(r)]),
     [results, confirmedItems],
   )
   const canGenerate = allConfirmed && !generatingRecommendations
-  const allComplete = response?.all_items_complete === true
+  const allComplete = effectiveResponse?.all_items_complete === true
   const selectedItem = results.find((r) => itemKey(r) === selectedKey) ?? null
   const selectedFeedback = selectedItem ? feedback[itemKey(selectedItem)] : undefined
 
@@ -92,7 +97,7 @@ export function Console() {
 
     setGeneratingRecommendations(true)
     try {
-      const next = await generateRecommendations(String(response.document_id), response.results ?? [], feedback)
+      const next = await generateRecommendations(String(response.document_id), results, feedback)
       setResponse(next)
       const first = next.results?.[0]
       setSelectedKey(first ? itemKey(first) : null)
@@ -104,7 +109,7 @@ export function Console() {
     } finally {
       setGeneratingRecommendations(false)
     }
-  }, [allConfirmed, response, feedback, advanceTo])
+  }, [allConfirmed, response, results, feedback, advanceTo])
 
   const confirmRecommendation = useCallback(() => {
     if (!allComplete) {
@@ -140,9 +145,9 @@ export function Console() {
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           {current === "upload" && <UploadStep onComplete={handleReviewComplete} />}
-          {current === "results" && response && (
+          {current === "results" && effectiveResponse && (
             <ResultsStep
-              response={response}
+              response={effectiveResponse}
               confirmedItems={confirmedItems}
               feedback={feedback}
               selectedKey={selectedKey}
@@ -154,9 +159,9 @@ export function Console() {
               onProceed={toRecommendation}
             />
           )}
-          {current === "recommendation" && response && (
+          {current === "recommendation" && effectiveResponse && (
             <RecommendationStep
-              response={response}
+              response={effectiveResponse}
               feedback={feedback}
               selectedKey={selectedKey}
               confirmed={recommendationConfirmed}
@@ -166,14 +171,14 @@ export function Console() {
               onBack={() => setCurrent("results")}
             />
           )}
-          {current === "final" && response && <FinalStep response={response} onReset={handleReset} />}
+          {current === "final" && effectiveResponse && <FinalStep response={effectiveResponse} onReset={handleReset} />}
         </div>
       </main>
 
-      {showDetailPanel && response && detailPanelOpen && (
+      {showDetailPanel && effectiveResponse && detailPanelOpen && (
         <ItemDetailPanel
           item={selectedItem}
-          documentId={String(response.document_id)}
+          documentId={String(effectiveResponse.document_id)}
           confirmed={selectedItem ? Boolean(confirmedItems[itemKey(selectedItem)]) : false}
           correctedResult={selectedFeedback?.corrected_result}
           position={selectedIndex >= 0 ? selectedIndex + 1 : 0}

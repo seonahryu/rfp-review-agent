@@ -70,6 +70,7 @@ class UserFeedbackInput(BaseModel):
     corrected_result: str = ""
     manual_compliance_content: str = ""
     corrected_evidence_pairs: list[EvidencePairInput] = Field(default_factory=list)
+    internal_assessment_overrides: dict[str, str] = Field(default_factory=dict)
     resolved: bool = False
 
 
@@ -85,6 +86,7 @@ class RecommendationReviewInput(BaseModel):
     evidence_pages: list[int] = Field(default_factory=list)
     evidence_text: list[str] = Field(default_factory=list)
     user_feedback: UserFeedbackInput | None = None
+    detailed_assessment: dict[str, Any] | None = None
 
 
 class RecommendationRequest(BaseModel):
@@ -356,9 +358,26 @@ def summarize_opinion_content(item_no: str, content: str) -> str:
     text = re.sub(r"^\s*(일부\s*)?명시\s*", "", text).strip()
     if item_no == "17" and "영향평가" in text and "결과서" in text:
         return "SW사업 영향평가 결과서 첨부 필요"
-    if len(text) > 90:
-        text = text[:87].rstrip() + "..."
-    return text or "보완 필요"
+    return concise_summary_without_ellipsis(text) or "보완 필요"
+
+
+def concise_summary_without_ellipsis(text: str, limit: int = 90) -> str:
+    cleaned = " ".join(str(text or "").split())
+    if len(cleaned) <= limit:
+        return cleaned
+    parts = re.split(r"(?:,| 및 | 또한 | 그리고 |\.|\n)", cleaned)
+    kept: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        candidate = ", ".join([*kept, part]) if kept else part
+        if len(candidate) > limit:
+            break
+        kept.append(part)
+    if kept:
+        return ", ".join(kept)
+    return cleaned[:limit].rstrip()
 
 
 def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -376,7 +395,7 @@ def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str,
     )
     compliance_text = compliance.compliance_content if compliance is not None else ""
     if detailed_assessment is not None:
-        compliance_text = internal_assessment_compliance_text(detailed_assessment)
+        compliance_text = internal_assessment_compliance_text(detailed_assessment, list(review.evidence_pages))
     criteria = item_criteria.get(str(review.item_no), {})
     return {
         "item_no": review.item_no,
@@ -413,10 +432,27 @@ def review_for_ui(review, item_criteria: dict[str, dict[str, Any]]) -> dict[str,
     }
 
 
-def internal_assessment_compliance_text(assessment: dict[str, Any]) -> str:
+def internal_assessment_compliance_text(assessment: dict[str, Any], evidence_pages: list[int] | None = None) -> str:
     if assessment["final_result"] == "준수":
-        return "내부 검토표의 모든 항목이 명시되어 있습니다."
+        page_text = format_pages_for_text(evidence_pages or [])
+        return f"제안요청서 {page_text} 명시" if page_text else "관련 문구 명시"
     return str(assessment.get("recommendation") or assessment.get("reason") or "미명시 항목을 보완하시기 바랍니다.").strip()
+
+
+def format_pages_for_text(pages: list[int]) -> str:
+    unique = sorted({int(page) for page in pages if isinstance(page, int)})
+    if not unique:
+        return ""
+    ranges: list[str] = []
+    start = previous = unique[0]
+    for page in unique[1:]:
+        if page == previous + 1:
+            previous = page
+            continue
+        ranges.append(f"p.{start}" if start == previous else f"pp.{start}-{previous}")
+        start = previous = page
+    ranges.append(f"p.{start}" if start == previous else f"pp.{start}-{previous}")
+    return ", ".join(ranges)
 
 
 def internal_assessment_copy_text(review, assessment: dict[str, Any] | None) -> str:
@@ -708,9 +744,99 @@ def generate_recommendations(payload: RecommendationRequest) -> dict[str, Any]:
         ],
     )
     data = summary_for_ui(summary, db_path)
+    apply_internal_assessment_feedback(data, payload)
     data["workflow_gates"]["recommendation_generation_mode"] = "split_endpoint"
     data["next_step"] = "final_results"
     return data
+
+
+def apply_internal_assessment_feedback(data: dict[str, Any], payload: RecommendationRequest) -> None:
+    feedback_by_item = {
+        str(item.item_no): item.user_feedback.internal_assessment_overrides
+        for item in payload.results
+        if item.user_feedback and item.user_feedback.internal_assessment_overrides
+    }
+    if not feedback_by_item:
+        return
+
+    for item in data.get("results", []):
+        assessment = item.get("detailed_assessment")
+        overrides = feedback_by_item.get(str(item.get("item_no")))
+        if not assessment or not overrides:
+            continue
+        for row in assessment.get("rows", []):
+            row_no = str(row.get("no", ""))
+            if row_no in overrides:
+                row["explicit_status"] = overrides[row_no]
+        assessment["final_result"] = internal_final_result_from_rows(assessment.get("rows", []))
+        assessment["reason"] = internal_reason_from_rows(assessment.get("rows", []), assessment["final_result"])
+        assessment["recommendation"] = internal_recommendation_from_rows(assessment.get("rows", []))
+        item["normalized_result"] = assessment["final_result"]
+        item["review_result"] = assessment["final_result"]
+        item["reason"] = assessment["reason"]
+        item["compliance_content"] = internal_assessment_compliance_text(
+            assessment,
+            [page for page in item.get("evidence_pages", []) if isinstance(page, int)],
+        )
+        item.setdefault("copy_texts", {})
+        item["copy_texts"]["review_result"] = assessment["final_result"]
+        item["copy_texts"]["compliance_content"] = item["compliance_content"]
+        item["copy_texts"]["internal_assessment"] = internal_assessment_copy_text_from_result(item, assessment)
+
+    data["review_result_column_text"] = review_result_column_text(data.get("results", []))
+    data["review_opinion"] = build_review_opinion(data.get("results", []))
+    data["all_items_complete"] = all(
+        item.get("normalized_result") and item.get("compliance_content")
+        for item in data.get("results", [])
+    )
+
+
+def internal_final_result_from_rows(rows: list[dict[str, Any]]) -> str:
+    statuses = [str(row.get("explicit_status", "")) for row in rows]
+    if all(status == "명시" for status in statuses):
+        return "준수"
+    if any(status in {"명시", "일부명시"} for status in statuses):
+        return "보완필요"
+    return "미준수"
+
+
+def internal_reason_from_rows(rows: list[dict[str, Any]], final_result: str) -> str:
+    if final_result == "준수":
+        return "내부 검토표의 모든 항목이 명시되어 있습니다."
+    missing = [
+        f"{row.get('no')}. {row.get('title')}({row.get('explicit_status')})"
+        for row in rows
+        if row.get("explicit_status") != "명시"
+    ]
+    return "명시가 부족한 내부 항목: " + ", ".join(missing)
+
+
+def internal_recommendation_from_rows(rows: list[dict[str, Any]]) -> str:
+    actions: list[str] = []
+    for row in rows:
+        if row.get("explicit_status") == "명시":
+            continue
+        action = str(row.get("missing_action") or "").strip()
+        if action and action not in actions:
+            actions.append(action)
+    return "\n".join(actions)
+
+
+def internal_assessment_copy_text_from_result(item: dict[str, Any], assessment: dict[str, Any]) -> str:
+    lines = [
+        f"{item.get('item_no')}. {item.get('law_name') or assessment.get('title', '')}",
+        "",
+        "구분\t내용\t명시 여부",
+    ]
+    for row in assessment.get("rows", []):
+        lines.append(
+            f"{row.get('no', '')}\t{row.get('title', '')}\n"
+            f"{row.get('content', '')}\t{row.get('explicit_status', '')}"
+        )
+    lines.extend(["", f"최종 판단\t{assessment.get('final_result', '')}"])
+    if assessment.get("reason"):
+        lines.append(f"판단 근거\t{assessment['reason']}")
+    return "\n".join(lines).strip()
 
 
 def apply_manual_compliance_contents(

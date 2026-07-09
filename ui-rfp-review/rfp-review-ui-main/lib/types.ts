@@ -3,6 +3,9 @@ export type EvidencePair = {
   text: string
 }
 
+export type InternalAssessmentStatus = "명시" | "일부명시" | "미명시"
+export type InternalAssessmentOverrides = Record<string, InternalAssessmentStatus>
+
 export type CopyTexts = {
   review_result?: string
   compliance_content?: string
@@ -63,6 +66,7 @@ export type UserFeedback = {
   corrected_result?: string
   manual_compliance_content?: string
   corrected_evidence_pairs?: EvidencePair[]
+  internal_assessment_overrides?: InternalAssessmentOverrides
   resolved?: boolean
 }
 

@@ -75,6 +75,7 @@ export async function generateRecommendations(
     evidence_pages: item.evidence_pages || [],
     evidence_text: item.evidence_text || [],
     user_feedback: feedback[String(item.item_no)] || item.user_feedback || null,
+    detailed_assessment: item.detailed_assessment ?? null,
   }))
 
   const res = await fetch("/api/recommendations", {
