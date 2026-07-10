@@ -90,6 +90,12 @@ export type ReviewResponse = {
   document_name?: string
   total_pages?: number
   parse_status?: string
+  replaced_page_numbers?: number[]
+  chunk_parse_summary?: {
+    total_pages: number
+    successful_pages: number
+    failed_pages: number[]
+  }
   audit_score?: number
   audit_warnings?: unknown[]
   parse_needs_user_confirmation?: boolean

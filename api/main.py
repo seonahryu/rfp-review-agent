@@ -1057,6 +1057,9 @@ async def import_parsed_pages(payload: ImportPagesRequest):
 async def replace_parsed_document_pages(document_id: int, payload: ReplacePagesRequest):
     if not payload.pages:
         raise HTTPException(status_code=400, detail="pages cannot be empty")
+    replaced_page_numbers = sorted({page.page_no for page in payload.pages})
+    if len(replaced_page_numbers) != len(payload.pages):
+        raise HTTPException(status_code=400, detail="duplicate page numbers cannot be replaced in one request")
     try:
         document = replace_document_pages_in_db(
             default_db_path(),
@@ -1067,7 +1070,9 @@ async def replace_parsed_document_pages(document_id: int, payload: ReplacePagesR
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     pipeline = RfpReviewPipeline(db_path=default_db_path(), output_dir=output_dir_path())
     audited = pipeline.audit.audit(document)
-    return JSONResponse(parsed_document_response(audited))
+    response = parsed_document_response(audited)
+    response["replaced_page_numbers"] = replaced_page_numbers
+    return JSONResponse(response)
 
 
 @app.post("/api/parse/jobs")

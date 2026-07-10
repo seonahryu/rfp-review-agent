@@ -8,6 +8,10 @@ const apiClient = fs.readFileSync(path.join(uiRoot, "lib", "api-client.ts"), "ut
 const uploadStep = fs.readFileSync(path.join(uiRoot, "components", "steps", "upload-step.tsx"), "utf8")
 const types = fs.readFileSync(path.join(uiRoot, "lib", "types.ts"), "utf8")
 const apiMain = fs.readFileSync(path.join(root, "api", "main.py"), "utf8")
+const deployedUiRoot = path.join(root, "rfp-review-ui-clone")
+const deployedUploadStep = fs.existsSync(deployedUiRoot)
+  ? fs.readFileSync(path.join(deployedUiRoot, "components", "steps", "upload-step.tsx"), "utf8")
+  : uploadStep
 
 assert(
   apiClient.includes("failedPages"),
@@ -50,8 +54,34 @@ assert(
   "failed-page retry button should call the retry flow",
 )
 assert(
+  uploadStep.includes("selectedFailedPages"),
+  "upload UI should track which failed pages the user selected for retry",
+)
+assert(
+  uploadStep.includes("toggleFailedPageSelection"),
+  "upload UI should let the user toggle individual failed pages",
+)
+assert(
+  uploadStep.includes("pagesToRetry = [...selectedFailedPages]"),
+  "failed-page retry should send only the selected failed pages",
+)
+assert(
+  uploadStep.includes("선택한 페이지"),
+  "failed-page retry UI should label the selected-page retry action",
+)
+assert(
+  deployedUploadStep.includes("selectedFailedPages") &&
+    deployedUploadStep.includes("pagesToRetry = [...selectedFailedPages]") &&
+    deployedUploadStep.includes("선택한 페이지"),
+  "deployed UI repo should also include selected failed-page retry controls",
+)
+assert(
   apiMain.includes('@app.post("/api/parse/documents/{document_id}/pages")'),
   "backend should expose an endpoint to overwrite selected parsed pages",
+)
+assert(
+  apiMain.includes("replaced_page_numbers"),
+  "backend should report which selected pages were overwritten",
 )
 assert(
   apiMain.includes('OPENAI_PDF_CHUNK_MAX_RETRIES", "0"'),
