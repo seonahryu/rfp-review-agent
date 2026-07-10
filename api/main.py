@@ -20,7 +20,12 @@ from pydantic import BaseModel, Field
 from agents.internal_assessment import build_internal_assessment
 from agents.models import ComplianceContent, FinalReview, ReviewResult
 from agents.gpt_parser_agent import GptParserAgent, GptParserConfig
-from agents.parse_bundle import candidate_page_to_dict, import_pages_to_db, import_parse_bundle_to_db
+from agents.parse_bundle import (
+    candidate_page_to_dict,
+    import_pages_to_db,
+    import_parse_bundle_to_db,
+    replace_document_pages_in_db,
+)
 from agents.parse_job_orchestrator import ParseJobRunner
 from orchestrator import (
     DEFAULT_ITEM_NOS,
@@ -122,6 +127,10 @@ class ParsedPageInput(BaseModel):
 class ImportPagesRequest(BaseModel):
     document_name: str
     total_pages: int
+    pages: list[ParsedPageInput]
+
+
+class ReplacePagesRequest(BaseModel):
     pages: list[ParsedPageInput]
 
 
@@ -1039,6 +1048,23 @@ async def import_parsed_pages(payload: ImportPagesRequest):
         pages_data=[page.model_dump() for page in payload.pages],
         file_path=None,
     )
+    pipeline = RfpReviewPipeline(db_path=default_db_path(), output_dir=output_dir_path())
+    audited = pipeline.audit.audit(document)
+    return JSONResponse(parsed_document_response(audited))
+
+
+@app.post("/api/parse/documents/{document_id}/pages")
+async def replace_parsed_document_pages(document_id: int, payload: ReplacePagesRequest):
+    if not payload.pages:
+        raise HTTPException(status_code=400, detail="pages cannot be empty")
+    try:
+        document = replace_document_pages_in_db(
+            default_db_path(),
+            document_id=document_id,
+            pages_data=[page.model_dump() for page in payload.pages],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     pipeline = RfpReviewPipeline(db_path=default_db_path(), output_dir=output_dir_path())
     audited = pipeline.audit.audit(document)
     return JSONResponse(parsed_document_response(audited))

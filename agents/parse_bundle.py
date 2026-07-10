@@ -11,6 +11,7 @@ from agents.gpt_parser_agent import (
     fill_missing_rfp_printed_page_numbers,
     infer_table_candidates,
     insert_page,
+    row_to_candidate,
 )
 from agents.models import CandidatePage, ParsedDocument
 
@@ -135,6 +136,68 @@ def import_pages_to_db(
         document_name=document_name,
         pdf_path=None,
         total_pages=total_pages,
+        parse_status=parse_status,
+        pages=pages,
+    )
+
+
+def replace_document_pages_in_db(
+    db_path: Path | str,
+    *,
+    document_id: int,
+    pages_data: list[dict[str, Any]],
+) -> ParsedDocument:
+    replacement_pages = [candidate_page_from_dict(data) for data in pages_data]
+    if not replacement_pages:
+        raise ValueError("pages_data cannot be empty")
+
+    page_numbers = sorted({page.page_no for page in replacement_pages})
+    infer_table_candidates(replacement_pages)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_parse_schema(conn)
+        doc = conn.execute("SELECT * FROM rfp_document WHERE id = ?", (document_id,)).fetchone()
+        if doc is None:
+            raise ValueError(f"document_id not found: {document_id}")
+
+        placeholders = ",".join("?" for _ in page_numbers)
+        conn.execute(
+            f"DELETE FROM rfp_page WHERE document_id = ? AND page_no IN ({placeholders})",
+            (document_id, *page_numbers),
+        )
+        for page in sorted(replacement_pages, key=lambda item: item.page_no):
+            insert_page(conn, document_id, page)
+
+        rows = conn.execute(
+            """
+            SELECT page_no, page_text, text_length, rfp_printed_page_no, has_table_candidate,
+                   has_attachment_candidate, has_eval_table_candidate,
+                   has_toc_candidate, has_blind_candidate,
+                   has_commercial_sw_candidate, parser_warning
+            FROM rfp_page
+            WHERE document_id = ?
+            ORDER BY page_no
+            """,
+            (document_id,),
+        ).fetchall()
+        pages = [row_to_candidate(row) for row in rows]
+        warning_count = sum(1 for page in pages if page.parser_warning)
+        parse_status = "warning" if warning_count else "ok"
+        conn.execute(
+            "UPDATE rfp_document SET parse_status = ?, parse_warning_count = ? WHERE id = ?",
+            (parse_status, warning_count, document_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return ParsedDocument(
+        document_id=document_id,
+        document_name=str(doc["document_name"]),
+        pdf_path=None,
+        total_pages=int(doc["total_pages"]),
         parse_status=parse_status,
         pages=pages,
     )
