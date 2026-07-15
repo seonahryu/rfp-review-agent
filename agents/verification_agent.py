@@ -10,7 +10,7 @@ from agents.models import AuditFinding, FinalAdjudication, FinalReview, ReviewRe
 
 
 IGNORED_SOURCES = {"llm_disabled"}
-AUTO_FINAL_RESULTS = {"준수", "미준수", "보완필요", "해당없음", "비대상"}
+AUTO_FINAL_RESULTS = {"준수", "미준수", "보완필요", "해당없음", "비대상", "확인요망"}
 
 
 class VerificationAuditAgent:

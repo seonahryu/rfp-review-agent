@@ -266,6 +266,8 @@ def normalize_result_label(value: str) -> str:
         return "미준수"
     if "보완" in text:
         return "보완필요"
+    if "확인요망" in text or "확인 필요" in text:
+        return "확인요망"
     if "해당없" in text or "해당 없음" in text:
         return "해당없음"
     if "준수" in text:
@@ -279,6 +281,8 @@ def normalize_result_label(value: str) -> str:
         return "미준수"
     if "보완" in text:
         return "보완필요"
+    if "확인요망" in text or "확인 필요" in text:
+        return "확인요망"
     if "해당없음" in text or "해당 없음" in text:
         return "해당없음"
     if "준수" in text:

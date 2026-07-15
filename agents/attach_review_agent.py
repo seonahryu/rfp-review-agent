@@ -5,6 +5,11 @@ import re
 from agents.gpt_judgement import gpt_review
 from agents.llm_client import DisabledLlmClient
 from agents.models import CandidatePage, RagContext, ReviewResult
+from agents.review_common import (
+    find_project_amount_evidence,
+    format_amount_억원,
+    has_commercial_sw_purchase_signal,
+)
 from agents.rule_review_agent import best_rag_keyword_match, evidence_for_keywords, rfp_display_page_no
 
 
@@ -49,6 +54,9 @@ class AttachmentReviewAgent:
             direct_purchase_result = review_commercial_sw_direct_purchase_target(pages)
             if direct_purchase_result is not None:
                 return direct_purchase_result
+            direct_purchase_advisory = commercial_sw_direct_purchase_advisory(pages)
+            if direct_purchase_advisory is not None:
+                return direct_purchase_advisory
 
         if str(item_no) == "2-1":
             bmt_result = review_bmt_target(pages)
@@ -716,8 +724,9 @@ def best_attachment_title_hint(item_no: str, text: str) -> str:
 
 def review_commercial_sw_direct_purchase_target(pages: list[CandidatePage]) -> ReviewResult | None:
     text = " ".join(page.page_text for page in pages if not page.has_toc_candidate)
-    has_budget = has_total_project_budget_at_least(text, 300_000_000)
-    has_direct_purchase_sw = has_direct_purchase_commercial_sw(text)
+    amount = find_project_amount_evidence(pages, 300_000_000)
+    has_budget = amount is not None
+    has_direct_purchase_sw = has_direct_purchase_commercial_sw(text) or has_commercial_sw_purchase_signal(pages)
     if not (has_budget and has_direct_purchase_sw):
         return ReviewResult(
             item_no="2",
@@ -737,6 +746,32 @@ def review_commercial_sw_direct_purchase_target(pages: list[CandidatePage]) -> R
             used_llm=False,
         )
     return None
+
+
+def commercial_sw_direct_purchase_advisory(pages: list[CandidatePage]) -> ReviewResult | None:
+    amount = find_project_amount_evidence(pages, 300_000_000)
+    if amount is None:
+        return None
+    text = " ".join(page.page_text for page in pages if not page.has_toc_candidate)
+    if not (has_direct_purchase_commercial_sw(text) or has_commercial_sw_purchase_signal(pages)):
+        return None
+    return ReviewResult(
+        item_no="2",
+        route_type=AttachmentReviewAgent.route_type,
+        result="보완필요",
+        is_target=True,
+        confidence=0.82,
+        evidence_pages=[amount.page_no],
+        evidence_text=[amount.context],
+        reason=(
+            f"총 사업금액 {format_amount_억원(amount.amount_won)} 및 상용SW 구매 가능성이 확인되어 "
+            "상용SW 직접구매 대상 여부 확인이 필요합니다."
+        ),
+        recommendation="발주기관에서 해당 여부를 확인 후 상용SW 직접구매 계획표 작성을 권고합니다.",
+        needs_human_review=True,
+        source="python_attachment_direct_purchase_target_advisory",
+        used_llm=False,
+    )
 
 
 def review_bmt_target(pages: list[CandidatePage]) -> ReviewResult | None:
