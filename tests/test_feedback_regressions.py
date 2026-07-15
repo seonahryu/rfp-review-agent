@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import unittest
+
+from agents.attach_review_agent import AttachmentReviewAgent
+from agents.internal_assessment import build_internal_assessment
+from agents.llm_review_agent import LlmReviewAgent
+from agents.models import CandidatePage, FinalReview, RagContext, ReviewResult
+from agents.review_common import postprocess_final_review
+from agents.rule_review_agent import RuleReviewAgent
+
+
+class FeedbackRegressionTests(unittest.TestCase):
+    def test_item_four_subcontract_checklist_excludes_form_pages_and_lists_missing_items(self):
+        pages = [
+            CandidatePage(
+                page_no=90,
+                page_text="서식 하도급계획 적정성 확인서 하도급 사전승인 50% 초과할 수 없음",
+                text_length=80,
+                has_attachment_candidate=True,
+            ),
+            CandidatePage(
+                page_no=21,
+                page_text=(
+                    "제안 안내 사항 하도급 사전승인 안내. 하도급 비율은 50%를 초과할 수 없음. "
+                    "재하도급은 원칙적으로 불허함. 계약체결 시 하도급 계획서를 제출하여야 함."
+                ),
+                text_length=120,
+            ),
+        ]
+
+        result = RuleReviewAgent().review("4", pages, RagContext(item_no="4"))
+
+        self.assertEqual(result.result, "보완필요")
+        self.assertIn("☑ 하도급 사전 승인 안내 명시 (p.21)", result.reason)
+        self.assertIn("☐ \"소프트웨어사업 하도급 계획 적정성 확인서\" 제출 안내 미명시", result.reason)
+        self.assertNotIn(90, result.evidence_pages)
+
+    def test_item_six_internal_assessment_treats_joint_ownership_as_joint_attribution(self):
+        assessment = build_internal_assessment(
+            "6",
+            [10],
+            [
+                "지식재산권은 발주기관과 계약상대자가 공동소유한다. "
+                "SW산출물 반출 요청절차, 누출금지정보 삭제, 확약서 제출, 제3자 사전승인, 입찰참가자격 제한을 명시한다."
+            ],
+        )
+
+        self.assertIsNotNone(assessment)
+        self.assertEqual(assessment["rows"][0]["explicit_status"], "명시")
+        self.assertEqual(assessment["final_result"], "준수")
+
+    def test_item_two_target_advisory_includes_budget_and_direct_purchase_plan_recommendation(self):
+        pages = [
+            CandidatePage(
+                page_no=5,
+                page_text="사업 개요 총 사업금액 4억원이며 직접구매 대상 상용SW 구매를 포함한다.",
+                text_length=60,
+            )
+        ]
+
+        result = AttachmentReviewAgent().review("2", pages, RagContext(item_no="2"))
+
+        self.assertEqual(result.result, "보완필요")
+        self.assertIn("4억 원", result.reason)
+        self.assertIn("상용SW 직접구매 계획표", result.recommendation)
+
+    def test_attachment_pages_force_manual_check_status_with_specific_instruction(self):
+        review = FinalReview(
+            item_no="17",
+            final_status="자동 확정 가능",
+            final_result="준수",
+            is_target=True,
+            confidence=0.9,
+            evidence_pages=[12],
+            evidence_text=["영향평가 실시"],
+            reason="영향평가 결과서가 확인되었습니다.",
+            recommendation="",
+            reviews=[
+                ReviewResult(
+                    item_no="17",
+                    route_type="attachment_review",
+                    result="준수",
+                    is_target=True,
+                    confidence=0.9,
+                    evidence_pages=[12],
+                    evidence_text=["영향평가 실시"],
+                    reason="영향평가 결과서가 확인되었습니다.",
+                    recommendation="",
+                    needs_human_review=False,
+                    source="test",
+                )
+            ],
+        )
+        pages = [
+            CandidatePage(
+                page_no=44,
+                page_text="붙임 소프트웨어사업 영향평가 검토결과서 기관장 날인",
+                text_length=40,
+                has_attachment_candidate=True,
+            )
+        ]
+
+        postprocess_final_review(review, pages)
+
+        self.assertEqual(review.final_result, "확인요망")
+        self.assertIn("기관장 날인 여부", review.recommendation)
+        self.assertEqual(review.evidence_pages, [44])
+
+    def test_item_sixteen_uses_relaxed_workforce_triggers_and_fp_sla_guidance(self):
+        pages = [
+            CandidatePage(
+                page_no=30,
+                page_text="기능 요구사항 FUR-001 조회 기능. 제안사는 전문 인력 이력사항 및 업무분장을 제출하여야 한다.",
+                text_length=80,
+            )
+        ]
+
+        result = LlmReviewAgent().review("16", pages, RagContext(item_no="16"))
+
+        self.assertEqual(result.result, "보완필요")
+        self.assertIn("FP(Function Point)", result.reason)
+        self.assertIn("업무분장", result.recommendation)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -5,6 +5,11 @@ import re
 from agents.gpt_judgement import gpt_review
 from agents.llm_client import DisabledLlmClient
 from agents.models import CandidatePage, RagContext, ReviewResult
+from agents.review_common import (
+    find_project_amount_evidence,
+    format_amount_억원,
+    is_allowed_subcontract_evidence_page,
+)
 
 
 RULE_KEYWORDS = {
@@ -61,9 +66,9 @@ class RuleReviewAgent:
                 )
 
         if str(item_no) == "3":
-            matches = evidence_for_small_sw_participation(pages)
-            if matches:
-                return rule_success(str(item_no), self.route_type, matches)
+            small_sw_result = review_small_sw_participation(pages)
+            if small_sw_result is not None:
+                return small_sw_result
 
         if str(item_no) == "4":
             disallow_matches = evidence_for_project_subcontract_disallowed(pages)
@@ -82,22 +87,9 @@ class RuleReviewAgent:
                     source="python_rule_subcontract_disallowed",
                     used_llm=False,
                 )
-            matches = evidence_for_subcontract_terms(pages)
-            if matches:
-                return ReviewResult(
-                    item_no=str(item_no),
-                    route_type=self.route_type,
-                    result="준수",
-                    is_target=True,
-                    confidence=0.88,
-                    evidence_pages=[page for page, _ in matches[:3]],
-                    evidence_text=[text for _, text in matches[:3]],
-                    reason="하도급 허용 사업에 필요한 사전승인, 비율 제한, 계획서 제출, 적정성 판단, 공동수급체 구성, 관리감독 및 시정요구 문구가 확인되었습니다.",
-                    recommendation="",
-                    needs_human_review=False,
-                    source="python_rule_subcontract_terms",
-                    used_llm=False,
-                )
+            checklist_result = review_subcontract_checklist(pages)
+            if checklist_result is not None:
+                return checklist_result
             gpt_result = gpt_review(
                 llm_client=self.llm_client,
                 model_role="rule",
@@ -127,6 +119,11 @@ class RuleReviewAgent:
                 return gpt_result
             partial_matches = best_sw_output_reuse_partial_evidence(pages)
             return rule_noncompliant(str(item_no), self.route_type, partial_matches)
+
+        if str(item_no) == "18":
+            sw_info_result = review_sw_business_info_submission(pages)
+            if sw_info_result is not None:
+                return sw_info_result
 
         matches = evidence_for_keywords(pages, RULE_KEYWORDS.get(str(item_no), []), radius=80)
         if matches:
@@ -244,6 +241,100 @@ def evidence_for_small_sw_participation(pages: list[CandidatePage]) -> list[tupl
     return hits[:1]
 
 
+def review_small_sw_participation(pages: list[CandidatePage]) -> ReviewResult | None:
+    amount = find_project_amount_evidence(pages)
+    matches = evidence_for_small_sw_participation(pages)
+    required_sentence = required_small_sw_sentence(amount.amount_won if amount else None)
+    if matches:
+        result = rule_success("3", RuleReviewAgent.route_type, matches)
+        if amount:
+            result.reason = (
+                f"p.{amount.page_no}에 근거하여 총 사업금액 {format_amount_억원(amount.amount_won)}임이 확인되었고, "
+                f"해당 금액 구간에 필요한 중소 SW사업자 참여 제한 문구가 확인되었습니다."
+            )
+        return result
+
+    if amount is None:
+        return None
+
+    evidence = best_small_sw_partial_evidence(pages)
+    page_text = f" p.{amount.page_no}" if amount else ""
+    amount_text = f"총 사업금액 {format_amount_억원(amount.amount_won)} 기준으로 " if amount else ""
+    return ReviewResult(
+        item_no="3",
+        route_type=RuleReviewAgent.route_type,
+        result="보완필요",
+        is_target=True,
+        confidence=0.8,
+        evidence_pages=[page for page, _ in evidence],
+        evidence_text=[text for _, text in evidence],
+        reason=f"{page_text} {amount_text}사업금액 구간에 맞는 중소 SW사업자 참여 지원 필수 문구가 모두 확인되지 않았습니다.".strip(),
+        recommendation=f"제안요청서에 다음 필수 문구 취지를 추가하시기 바랍니다: {required_sentence}",
+        needs_human_review=False,
+        source="python_rule_small_sw_missing_required_sentence",
+        used_llm=False,
+    )
+
+
+def required_small_sw_sentence(amount_won: int | None) -> str:
+    if amount_won is not None and amount_won < 2_000_000_000:
+        return "본 사업은 20억원 미만 사업으로 대기업 및 중견기업인 소프트웨어사업자는 입찰에 참여할 수 없습니다."
+    if amount_won is not None and amount_won < 4_000_000_000:
+        return "본 사업은 40억원 미만 사업으로 대기업인 소프트웨어사업자는 입찰에 참여할 수 없습니다."
+    return "중소 소프트웨어사업자의 사업 참여 지원에 관한 지침에 따른 참여 제한 대상 여부와 금액 구간별 필수 문구를 명시해야 합니다."
+
+
+def best_small_sw_partial_evidence(pages: list[CandidatePage]) -> list[tuple[int, str]]:
+    hits: list[tuple[int, CandidatePage]] = []
+    for page in pages:
+        if page.has_toc_candidate:
+            continue
+        compact = compact_for_match(page.page_text)
+        score = sum(1 for term in ["중소소프트웨어사업자", "중소SW사업자", "대기업", "중견기업", "입찰", "20억원", "40억원"] if term in compact)
+        if score:
+            hits.append((score, page))
+    hits.sort(key=lambda item: (-item[0], rfp_display_page_no(item[1])))
+    return [(rfp_display_page_no(page), evidence_window(page.page_text, "중소", radius=260)) for _, page in hits[:3]]
+
+
+def review_sw_business_info_submission(pages: list[CandidatePage]) -> ReviewResult | None:
+    hits: list[tuple[int, str]] = []
+    has_submission = False
+    has_method = False
+    for page in pages:
+        if page.has_toc_candidate:
+            continue
+        compact = compact_for_match(page.page_text)
+        if "SW사업정보" not in compact and "소프트웨어사업정보" not in compact:
+            continue
+        hits.append((rfp_display_page_no(page), evidence_window(page.page_text, "SW사업정보", radius=260)))
+        has_submission = has_submission or any(term in compact for term in ["제출", "작성및제출", "데이터작성"])
+        has_method = has_method or any(term in compact for term in ["www.spir.kr", "SPIR", "SW사업정보저장소", "제출방법"])
+    if not hits:
+        return None
+    if has_submission and has_method:
+        return rule_success("18", RuleReviewAgent.route_type, hits[:3])
+    missing = []
+    if not has_submission:
+        missing.append("SW사업정보 제출 여부 명시")
+    if not has_method:
+        missing.append("SW사업정보 제출 방법 안내")
+    return ReviewResult(
+        item_no="18",
+        route_type=RuleReviewAgent.route_type,
+        result="보완필요",
+        is_target=True,
+        confidence=0.78,
+        evidence_pages=[page for page, _ in hits[:3]],
+        evidence_text=[text for _, text in hits[:3]],
+        reason="SW사업정보 관련 문구가 확인되나 검토의견서 작성예시 수준의 제출 여부 및 제출방법 안내와 상이합니다.",
+        recommendation="검토의견서 작성예시를 참고하여 " + ", ".join(missing) + "를 보완하시기 바랍니다.",
+        needs_human_review=False,
+        source="python_rule_sw_business_info_example_gap",
+        used_llm=False,
+    )
+
+
 def evidence_for_project_subcontract_disallowed(pages: list[CandidatePage]) -> list[tuple[int, str]]:
     hits: list[tuple[int, str]] = []
     for page in pages:
@@ -279,7 +370,7 @@ def evidence_for_subcontract_terms(pages: list[CandidatePage]) -> list[tuple[int
     candidates: list[tuple[CandidatePage, set[str]]] = []
 
     for page in pages:
-        if page.has_toc_candidate:
+        if not is_allowed_subcontract_evidence_page(page):
             continue
         matched = subcontract_term_requirements(page.page_text)
         if not matched:
@@ -312,6 +403,78 @@ def subcontract_term_requirements(text: str) -> set[str]:
     return matched
 
 
+SUBCONTRACT_CHECKLIST = [
+    ("prior_approval", "하도급 사전 승인 안내", ["하도급", "사전승인"]),
+    ("ratio_limit", "하도급 비율 50% 초과 금지 안내", ["하도급", "50", "초과할수없"]),
+    ("resubcontract_ban", "재하도급 원칙적 불허 안내", ["하도급", "원칙적으로불허"]),
+    ("plan_submission", "하도급 계획서 제출 안내", ["하도급", "계획서", "제출"]),
+    (
+        "adequacy_confirmation",
+        "\"소프트웨어사업 하도급 계획 적정성 확인서\" 제출 안내",
+        ["하도급계획적정성확인서"],
+    ),
+    ("contract_criteria", "하도급 계약의 적정성 판단기준 사전 안내", ["하도급", "적정성", "판단"]),
+]
+
+
+def review_subcontract_checklist(pages: list[CandidatePage]) -> ReviewResult | None:
+    matches = subcontract_checklist_matches(pages)
+    if not any(matches.values()):
+        return None
+    lines = subcontract_checklist_lines(matches)
+    evidence_pages = sorted({page for page, _ in matches.values() if page is not None})
+    evidence_text = [text for _, text in matches.values() if text]
+    missing = [label for key, label, _ in SUBCONTRACT_CHECKLIST if key not in matches]
+    result = "준수" if not missing else "보완필요"
+    return ReviewResult(
+        item_no="4",
+        route_type=RuleReviewAgent.route_type,
+        result=result,
+        is_target=True,
+        confidence=0.88 if result == "준수" else 0.76,
+        evidence_pages=evidence_pages[:6],
+        evidence_text=evidence_text[:6],
+        reason="\n".join(lines),
+        recommendation="" if result == "준수" else "문서 내 하도급 제도 안내 중 다음 항목을 보완하시기 바랍니다: " + ", ".join(missing),
+        needs_human_review=False,
+        source="python_rule_subcontract_checklist",
+        used_llm=False,
+    )
+
+
+def subcontract_checklist_matches(pages: list[CandidatePage]) -> dict[str, tuple[int | None, str]]:
+    matches: dict[str, tuple[int | None, str]] = {}
+    for page in pages:
+        if not is_allowed_subcontract_evidence_page(page):
+            continue
+        compact = compact_for_match(page.page_text)
+        for key, _, terms in SUBCONTRACT_CHECKLIST:
+            if key in matches:
+                continue
+            if key == "adequacy_confirmation":
+                matched = (
+                    "하도급계획적정성확인서" in compact
+                    or ("하도급" in compact and "적정성" in compact and "평가항목" in compact)
+                    or ("하도급계약" in compact and "적정성" in compact and "세부기준" in compact)
+                )
+            else:
+                matched = all(term in compact for term in terms)
+            if matched:
+                matches[key] = (rfp_display_page_no(page), evidence_window(page.page_text, "하도급", radius=260))
+    return matches
+
+
+def subcontract_checklist_lines(matches: dict[str, tuple[int | None, str]]) -> list[str]:
+    lines: list[str] = []
+    for key, label, _ in SUBCONTRACT_CHECKLIST:
+        page, _text = matches.get(key, (None, ""))
+        if page is None:
+            lines.append(f"☐ {label} 미명시")
+        else:
+            lines.append(f"☑ {label} 명시 (p.{page})")
+    return lines
+
+
 def select_subcontract_term_evidence_pages(
     candidates: list[tuple[CandidatePage, set[str]]],
     required: set[str],
@@ -332,7 +495,7 @@ def select_subcontract_term_evidence_pages(
 def best_subcontract_terms_partial_evidence(pages: list[CandidatePage]) -> list[tuple[int, str]]:
     scored: list[tuple[int, CandidatePage]] = []
     for page in pages:
-        if page.has_toc_candidate:
+        if not is_allowed_subcontract_evidence_page(page):
             continue
         matched = subcontract_term_requirements(page.page_text)
         if matched:

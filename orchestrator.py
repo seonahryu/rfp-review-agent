@@ -17,6 +17,7 @@ from agents.llm_review_agent import LlmReviewAgent
 from agents.models import CandidatePage, FinalReview, ParsedDocument, PipelineSummary, ReviewResult
 from agents.rag_agent import RagAgent
 from agents.report_agent import ReportAgent
+from agents.review_common import postprocess_final_review
 from agents.review_router import route_item
 from agents.rule_review_agent import RuleReviewAgent
 from agents.table_review_agent import TableReviewAgent
@@ -121,7 +122,8 @@ class RfpReviewPipeline:
             for review in await asyncio.gather(*review_tasks)
             if review is not None
         ]
-        return self.verifier.verify(item_no, reviews, parse_status=document.parse_status)
+        final_review = self.verifier.verify(item_no, reviews, parse_status=document.parse_status)
+        return postprocess_final_review(final_review, pages)
 
     def _run_primary_agent(self, item_no: str, pages: list[CandidatePage], rag_context):
         route = route_item(item_no)
