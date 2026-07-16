@@ -156,7 +156,7 @@ def review_sw_impact_assessment_attachment(pages: list[CandidatePage]) -> Review
                     evidence_pages=combined_page_numbers(complete_pages),
                     evidence_text=combined_page_texts(complete_pages),
                     reason="소프트웨어사업 영향평가 결과서 첨부 본문은 있으나, RFP 본문에서 영향평가 실시 및 첨부 명시가 확인되지 않았습니다.",
-                    recommendation=sw_impact_assessment_recommendation(),
+                    recommendation=sw_impact_assessment_recommendation(declaration_pages),
                     needs_human_review=False,
                     source="python_attachment_sw_impact_missing_declaration",
                     used_llm=False,
@@ -184,7 +184,7 @@ def review_sw_impact_assessment_attachment(pages: list[CandidatePage]) -> Review
             evidence_pages=combined_page_numbers(declaration_pages, actual_pages),
             evidence_text=combined_page_texts(declaration_pages, actual_pages),
             reason="소프트웨어사업 영향평가 실시 명시는 있으나, 영향평가 결과서 제목만 있고 실제 검토 내용이 없는 빈 문서로 확인됩니다.",
-            recommendation=sw_impact_assessment_recommendation(),
+            recommendation=sw_impact_assessment_recommendation(declaration_pages),
             needs_human_review=False,
             source="python_attachment_sw_impact_empty",
             used_llm=False,
@@ -207,7 +207,7 @@ def review_sw_impact_assessment_attachment(pages: list[CandidatePage]) -> Review
             evidence_pages=combined_page_numbers(declaration_pages, reference_pages),
             evidence_text=combined_page_texts(declaration_pages, reference_pages),
             reason="소프트웨어사업 영향평가 결과서를 첨부한다고 명시되어 있으나, 실제 별첨 본문은 확인되지 않았습니다.",
-            recommendation=sw_impact_assessment_recommendation(),
+            recommendation=sw_impact_assessment_recommendation(declaration_pages),
             needs_human_review=False,
             source="python_attachment_sw_impact_missing",
             used_llm=False,
@@ -228,7 +228,7 @@ def review_sw_impact_assessment_attachment(pages: list[CandidatePage]) -> Review
             evidence_pages=combined_page_numbers(declaration_pages, listed_pages),
             evidence_text=combined_page_texts(declaration_pages, listed_pages),
             reason="목차 및 붙임 목록에는 소프트웨어사업 영향평가 검토 결과서가 표시되어 있으나 실제 첨부 본문이 확인되지 않았습니다.",
-            recommendation=sw_impact_assessment_recommendation(),
+            recommendation=sw_impact_assessment_recommendation(declaration_pages),
             needs_human_review=False,
             source="python_attachment_sw_impact_missing",
             used_llm=False,
@@ -363,7 +363,19 @@ def has_sw_impact_assessment_title(text: str) -> bool:
     return "소프트웨어사업영향평가검토결과서" in compact or "소프트웨어사업영향평가결과서" in compact
 
 
-def sw_impact_assessment_recommendation() -> str:
+def sw_impact_assessment_recommendation(declaration_pages: list[CandidatePage] | None = None) -> str:
+    basis = ""
+    if declaration_pages:
+        page_no = rfp_display_page_no(declaration_pages[0])
+        basis = f"제안요청서 p.{page_no}에 영향평가 실시 사업임을 명시하였으나, "
+    return (
+        basis
+        + '"소프트웨어사업 영향평가 결과서"가 작성되지 않음.\n'
+        "-> 기관장 직인이 날인된 영향평가 결과서를 작성하여 첨부하시기 바랍니다."
+    )
+
+
+def sw_impact_assessment_legal_basis() -> str:
     return (
         "국가기관 등의 장이 소프트웨어사업을 추진하는 경우「소프트웨어 진흥법」 제43조에 따라 "
         "민간시장에 미치는 영향을 분석하는 SW사업 영향평가를 실시하고, "
@@ -526,8 +538,8 @@ def has_project_period_attachment_title(text: str) -> bool:
 
 def project_period_recommendation() -> str:
     return (
-        "소프트웨어사업 계약 및 관리감독에 관한 지침 제10조에 의거 별지 제4호서식 "
-        "소프트웨어 개발사업의 적정 사업기간 종합 산정서(단, 위원명 및 서명은 제외한다)를 첨부하시기 바랍니다."
+        '제안요청서에 위원명 및 서명을 제외한(블라인드 처리) 상태로 스캔한 '
+        '"소프트웨어 개발사업의 적정 사업기간 종합 산정서"를 작성하여 첨부하시기 바랍니다.'
     )
 
 

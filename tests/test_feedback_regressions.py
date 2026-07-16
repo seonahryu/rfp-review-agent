@@ -107,6 +107,80 @@ class FeedbackRegressionTests(unittest.TestCase):
         self.assertIn("기관장 날인 여부", review.recommendation)
         self.assertEqual(review.evidence_pages, [44])
 
+    def test_item_fifteen_missing_attachment_uses_noncompliant_template(self):
+        pages = [
+            CandidatePage(
+                page_no=20,
+                page_text="본 사업은 소프트웨어 개발사업 적정 사업기간 산정 기준에 따른 사업이다.",
+                text_length=50,
+            )
+        ]
+
+        result = AttachmentReviewAgent().review("15", pages, RagContext(item_no="15"))
+
+        self.assertEqual(result.result, "미준수")
+        self.assertIn("위원명 및 서명을 제외한", result.recommendation)
+        self.assertNotIn("확인 후 검토의견", result.recommendation)
+
+    def test_item_seventeen_empty_attachment_uses_noncompliant_template(self):
+        pages = [
+            CandidatePage(
+                page_no=74,
+                page_text="본 사업은 소프트웨어사업 영향평가를 실시한 사업이며 결과서를 첨부한다.",
+                text_length=50,
+            ),
+            CandidatePage(
+                page_no=75,
+                page_text="붙임 소프트웨어사업 영향평가 결과서",
+                text_length=30,
+                has_attachment_candidate=True,
+            ),
+        ]
+
+        result = AttachmentReviewAgent().review("17", pages, RagContext(item_no="17"))
+
+        self.assertEqual(result.result, "미준수")
+        self.assertIn("제안요청서 p.74", result.recommendation)
+        self.assertIn("기관장 직인이 날인된", result.recommendation)
+        self.assertNotIn("기관장 날인 여부를 확인", result.recommendation)
+
+    def test_item_seventeen_substantive_attachment_is_manual_check_after_postprocess(self):
+        review = FinalReview(
+            item_no="17",
+            final_status="자동 확정 가능",
+            final_result="준수",
+            is_target=True,
+            confidence=0.9,
+            evidence_pages=[74, 75],
+            evidence_text=["영향평가 실시", "영향평가 결과서 본문"],
+            reason="소프트웨어사업 영향평가 실시 명시와 영향평가 검토 결과서 첨부 본문이 함께 확인되었습니다.",
+            recommendation="",
+            reviews=[],
+        )
+        pages = [
+            CandidatePage(
+                page_no=74,
+                page_text="본 사업은 소프트웨어사업 영향평가를 실시한 사업이며 결과서를 첨부한다.",
+                text_length=50,
+            ),
+            CandidatePage(
+                page_no=75,
+                page_text=(
+                    "붙임 소프트웨어사업 영향평가 결과서\n"
+                    "영향평가단계 발주 전 평가항목 민간시장 침해 가능성 낮음 평가결과 해당 없음 "
+                    "종합의견 본 사업은 내부 행정서비스 개선을 위한 구축 사업으로 민간서비스 중복 가능성이 낮고 "
+                    "검토 결과 소프트웨어사업 영향평가 기준에 타당함."
+                ),
+                text_length=150,
+                has_attachment_candidate=True,
+            ),
+        ]
+
+        postprocess_final_review(review, pages)
+
+        self.assertEqual(review.final_result, "확인요망")
+        self.assertIn("기관장 날인 여부", review.recommendation)
+
     def test_item_sixteen_uses_relaxed_workforce_triggers_and_fp_sla_guidance(self):
         pages = [
             CandidatePage(
@@ -121,6 +195,7 @@ class FeedbackRegressionTests(unittest.TestCase):
         self.assertEqual(result.result, "보완필요")
         self.assertIn("FP(Function Point)", result.reason)
         self.assertIn("업무분장", result.recommendation)
+        self.assertIn("모두 삭제", result.recommendation)
 
 
 if __name__ == "__main__":

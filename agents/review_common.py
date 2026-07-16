@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from agents.models import CandidatePage, FinalReview
 
 
-MANUAL_ATTACHMENT_ITEMS = {"2", "14", "15", "17"}
+MANUAL_ATTACHMENT_ITEMS = {"2", "15", "17"}
 
 
 @dataclass(frozen=True)
@@ -108,6 +108,11 @@ def target_basis_sentence(item_no: str, pages: list[CandidatePage]) -> str:
             f"대상: p.{amount.page_no}에 근거하여 총 사업금액 {format_amount_억원(amount.amount_won)}임이 확인되어, "
             "제안서 보상 대상 여부 판단에 필요한 사업금액 근거가 확인되었습니다."
         )
+    if str(item_no) == "18":
+        return (
+            f"대상: p.{amount.page_no}에 근거하여 총 사업금액 {format_amount_억원(amount.amount_won)}임이 확인되어, "
+            "SW사업정보 제출 대상 여부 판단에 필요한 사업예산 근거가 확인되었습니다."
+        )
     return (
         f"대상: p.{amount.page_no}에 근거하여 총 사업금액 {format_amount_억원(amount.amount_won)}임이 확인되어, "
         "대상 여부 판단에 필요한 사업금액 근거가 확인되었습니다."
@@ -117,7 +122,7 @@ def target_basis_sentence(item_no: str, pages: list[CandidatePage]) -> str:
 def apply_target_basis(review: FinalReview, pages: list[CandidatePage]) -> None:
     if review.is_target is not True:
         return
-    if str(review.item_no) not in {"2", "13"}:
+    if str(review.item_no) not in {"2", "13", "18"}:
         return
     sentence = target_basis_sentence(str(review.item_no), pages)
     if not sentence or sentence in str(review.reason or ""):
@@ -170,6 +175,8 @@ def manual_attachment_instruction(item_no: str, page: CandidatePage) -> str:
 
 def apply_manual_attachment_gate(review: FinalReview, pages: list[CandidatePage]) -> None:
     if str(review.item_no) not in MANUAL_ATTACHMENT_ITEMS:
+        return
+    if str(review.item_no) in {"15", "17"} and str(review.final_result).strip() != "준수":
         return
     hits = attachment_review_pages(str(review.item_no), pages)
     if not hits:

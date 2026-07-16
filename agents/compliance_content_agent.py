@@ -38,7 +38,11 @@ class ComplianceContentAgent:
 
         direct_pages = direct_legal_review_pages(review)
         if str(review.item_no) == "16":
-            if review.is_target is True:
+            recommendation = str(review.recommendation or "").strip()
+            if recommendation and label in {"보완필요", "미준수"}:
+                prefix = f"제안요청서 {format_pages(direct_pages)}에 투입인력 요구사항이 확인됩니다.\n" if direct_pages else ""
+                content = prefix + "-> " + recommendation
+            elif review.is_target is True:
                 content = f"제안요청서 {format_pages(direct_pages)} 기준 대상 사업으로 판단" if direct_pages else "대상 사업으로 판단"
             elif review.is_target is False:
                 content = f"제안요청서 {format_pages(direct_pages)} 기준 비대상 사업으로 판단" if direct_pages else "비대상 사업으로 판단"

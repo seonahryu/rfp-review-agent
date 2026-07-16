@@ -85,6 +85,7 @@ class UserFeedbackInput(BaseModel):
     comment: str = ""
     corrected_result: str = ""
     manual_compliance_content: str = ""
+    manual_compliance_content_edited: bool = False
     corrected_evidence_pairs: list[EvidencePairInput] = Field(default_factory=list)
     internal_assessment_overrides: dict[str, str] = Field(default_factory=dict)
     resolved: bool = False
@@ -241,6 +242,7 @@ def user_feedback_template() -> dict[str, Any]:
         "comment": "",
         "corrected_result": "",
         "manual_compliance_content": "",
+        "manual_compliance_content_edited": False,
         "corrected_evidence_pairs": [],
         "resolved": False,
     }
@@ -388,6 +390,9 @@ def build_review_opinion(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 def summarize_opinion_content(item_no: str, content: str) -> str:
     text = " ".join(str(content or "").split())
+    if item_no == "8":
+        text = re.sub(r"\(계약예규\)\s*용역계약일반조건\s*제58조\s*제2항과\s*제3항에\s*따라", "공통명시문장 추가 필요", text)
+        text = re.sub(r"용역계약일반조건\s*제58조\s*제2항[·ㆍ, ]*제3항(?:에\s*따라)?", "공통명시문장 추가 필요", text)
     text = text.replace("→", " ")
     text = re.sub(r"제안요청서\s*p{1,2}\.\s*\d+(?:\s*[-~]\s*\d+)?(?:\s*,\s*)*", "", text)
     text = re.sub(r"p{1,2}\.\s*\d+(?:\s*[-~]\s*\d+)?(?:\s*,\s*)*", "", text)
@@ -732,6 +737,10 @@ def final_review_from_payload(item: RecommendationReviewInput) -> FinalReview:
     corrected_result = feedback.corrected_result.strip() if feedback else ""
     result = corrected_result or item.normalized_result or item.review_result
     is_target = corrected_is_target(corrected_result, item.is_target)
+    if feedback and feedback.manual_compliance_content_edited:
+        manual_text = feedback.manual_compliance_content.strip()
+        if manual_text:
+            recommendation = manual_text
     if corrected_result in {"미준수", "보완필요"} and not recommendation.strip():
         recommendation = (
             feedback.comment.strip()
@@ -920,7 +929,9 @@ def apply_manual_compliance_contents(
     manual_by_item = {
         str(item.item_no): item.user_feedback.manual_compliance_content.strip()
         for item in payload.results
-        if item.user_feedback and item.user_feedback.manual_compliance_content.strip()
+        if item.user_feedback
+        and item.user_feedback.manual_compliance_content_edited
+        and item.user_feedback.manual_compliance_content.strip()
     }
     if not manual_by_item:
         return final_reviews

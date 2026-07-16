@@ -79,6 +79,7 @@ def review_item_16_workforce_management(pages: list[CandidatePage]) -> ReviewRes
         if function_pages
         else ""
     )
+    page_text = ", ".join(f"{page}쪽" for page, _ in trigger_pages[:5])
     return ReviewResult(
         item_no="16",
         route_type=LlmReviewAgent.route_type,
@@ -92,8 +93,9 @@ def review_item_16_workforce_management(pages: list[CandidatePage]) -> ReviewRes
             "발주기관이 해당 방식 적용 여부를 직접 판단해야 합니다."
         ),
         recommendation=(
-            "발주기관에서 FP 방식 또는 SLA 방식 적용 여부를 확인하고, 해당 요건에 부합하는 경우 "
-            "투입인력 요구 및 관리 관련 내용(인력현황, 이력사항, 전문인력, 업무분장 등)을 삭제하시기 바랍니다."
+            f"제안요청서({page_text})에 명시한 투입인력 요구 및 관리 관련 내용"
+            "(인력현황, 이력사항, 전문인력, 업무분장, 투입인력 수·경력·수행조직 등)을 모두 삭제하시기 바랍니다. "
+            "다만 제안요청서만으로 FP 방식 또는 SLA 방식 적용 여부가 명확하지 않은 경우 발주기관에서 해당 여부를 먼저 판단하시기 바랍니다."
         ),
         needs_human_review=True,
         source="python_llm_item_16_workforce_trigger",
