@@ -7,6 +7,31 @@ from agents.models import CandidatePage, FinalReview
 
 
 MANUAL_ATTACHMENT_ITEMS = {"2", "15", "17"}
+BUDGET_BASIS_ITEMS = {"2", "3", "13", "18"}
+BUDGET_CONTEXT_KEYWORDS = [
+    "총사업금액",
+    "총 사업금액",
+    "사업금액",
+    "사업 금액",
+    "사업예산",
+    "사업 예산",
+    "추정가격",
+    "추정 가격",
+    "배정예산",
+    "배정 예산",
+    "예산액",
+]
+BUDGET_CONTEXT_NEGATIVE_KEYWORDS = [
+    "하도급금액",
+    "하도급 금액",
+    "상용SW구매금액",
+    "상용SW 구매금액",
+    "상용소프트웨어구매금액",
+    "계약금액",
+    "평가점수",
+    "배점",
+    "위약금",
+]
 
 
 @dataclass(frozen=True)
@@ -27,7 +52,6 @@ def display_page_no(page: CandidatePage) -> int:
 
 def find_project_amount_evidence(pages: list[CandidatePage], threshold_won: int = 0) -> AmountEvidence | None:
     candidates: list[AmountEvidence] = []
-    keywords = ["총사업금액", "총 사업금액", "사업금액", "사업 금액", "사업예산", "사업 예산", "추정가격", "예산"]
     for page in pages:
         if page.has_toc_candidate:
             continue
@@ -36,7 +60,7 @@ def find_project_amount_evidence(pages: list[CandidatePage], threshold_won: int 
             start = max(0, match.start() - 90)
             end = min(len(source), match.end() + 90)
             context = source[start:end]
-            if not any(keyword in context for keyword in keywords):
+            if not is_project_budget_context(context):
                 continue
             amount = parse_korean_amount(match.group(0))
             if amount >= threshold_won:
@@ -51,6 +75,15 @@ def find_project_amount_evidence(pages: list[CandidatePage], threshold_won: int 
     if not candidates:
         return None
     return max(candidates, key=lambda item: item.amount_won)
+
+
+def is_project_budget_context(text: str) -> bool:
+    compact = compact_text(text)
+    if not any(compact_text(keyword) in compact for keyword in BUDGET_CONTEXT_KEYWORDS):
+        return False
+    if any(compact_text(keyword) in compact for keyword in BUDGET_CONTEXT_NEGATIVE_KEYWORDS):
+        return False
+    return True
 
 
 def parse_korean_amount(value: str) -> int:
@@ -122,7 +155,7 @@ def target_basis_sentence(item_no: str, pages: list[CandidatePage]) -> str:
 def apply_target_basis(review: FinalReview, pages: list[CandidatePage]) -> None:
     if review.is_target is not True:
         return
-    if str(review.item_no) not in {"2", "13", "18"}:
+    if str(review.item_no) not in BUDGET_BASIS_ITEMS:
         return
     sentence = target_basis_sentence(str(review.item_no), pages)
     if not sentence or sentence in str(review.reason or ""):
@@ -198,3 +231,8 @@ def postprocess_final_review(review: FinalReview, pages: list[CandidatePage]) ->
     apply_target_basis(review, pages)
     apply_manual_attachment_gate(review, pages)
     return review
+    if str(item_no) == "3":
+        return (
+            f"대상: p.{amount.page_no}에 근거하여 총 사업금액 {format_amount_억원(amount.amount_won)}임이 확인되어, "
+            "중소 SW사업자 참여 지원 기준의 사업금액 구간 판단 근거가 확인되었습니다."
+        )

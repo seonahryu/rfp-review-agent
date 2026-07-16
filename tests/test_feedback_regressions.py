@@ -35,6 +35,10 @@ class FeedbackRegressionTests(unittest.TestCase):
         self.assertIn("☑ 하도급 사전 승인 안내 명시 (p.21)", result.reason)
         self.assertIn("☐ \"소프트웨어사업 하도급 계획 적정성 확인서\" 제출 안내 미명시", result.reason)
         self.assertNotIn(90, result.evidence_pages)
+        assessment = build_internal_assessment("4", result.evidence_pages, result.evidence_text)
+        self.assertIsNotNone(assessment)
+        self.assertEqual(assessment["rows"][0]["explicit_status"], "명시")
+        self.assertEqual(assessment["rows"][0]["evidence_pairs"][0]["page"], 21)
 
     def test_item_six_internal_assessment_treats_joint_ownership_as_joint_attribution(self):
         assessment = build_internal_assessment(
@@ -64,6 +68,45 @@ class FeedbackRegressionTests(unittest.TestCase):
         self.assertEqual(result.result, "보완필요")
         self.assertIn("4억 원", result.reason)
         self.assertIn("상용SW 직접구매 계획표", result.recommendation)
+
+    def test_budget_basis_is_applied_to_items_2_3_13_18(self):
+        pages = [
+            CandidatePage(
+                page_no=7,
+                page_text="사업 개요 총 사업금액 12억원 부가가치세 포함",
+                text_length=40,
+            )
+        ]
+        for item_no in ["2", "3", "13", "18"]:
+            with self.subTest(item_no=item_no):
+                review = FinalReview(
+                    item_no=item_no,
+                    final_status="자동 확정 가능",
+                    final_result="보완필요",
+                    is_target=True,
+                    confidence=0.8,
+                    evidence_pages=[],
+                    evidence_text=[],
+                    reason="대상 사업으로 판단",
+                    recommendation="",
+                    reviews=[],
+                )
+                postprocess_final_review(review, pages)
+                self.assertIn("p.7", review.reason)
+                self.assertIn("12억 원", review.reason)
+
+    def test_project_amount_ignores_non_budget_amount_context(self):
+        from agents.review_common import find_project_amount_evidence
+
+        pages = [
+            CandidatePage(
+                page_no=8,
+                page_text="하도급 금액 5억원 및 평가점수 90점 관련 안내",
+                text_length=40,
+            )
+        ]
+
+        self.assertIsNone(find_project_amount_evidence(pages))
 
     def test_attachment_pages_force_manual_check_status_with_specific_instruction(self):
         review = FinalReview(
